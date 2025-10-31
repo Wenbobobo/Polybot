@@ -16,6 +16,7 @@ Architecture Overview
 
 Data Ingestion
 - WS-first for real-time L2; REST for snapshots and resync.
+- WS client scaffold uses generic JSON messages for tests; Polymarket subscription semantics to be added when wiring live.
 - Snapshot→delta with monotonic seq; gap detection and partial resync.
 - Backpressure and batching; per-market freshness (age_ms) and health.
 
@@ -40,4 +41,3 @@ Performance Targets (initial)
 
 Open Items (tracked in roadmap)
 - Exact WS/REST payload schemas; relayer FOK/IOC semantics; CTF gas models.
-

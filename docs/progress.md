@@ -16,3 +16,11 @@ This file tracks decisions and incremental progress.
 - Added logging JSON formatter and SQLite WAL helper; tests pass.
 - Added Gamma HTTP client with httpx and MockTransport-based unit tests (no external calls).
 - Added orderbook replay harness and tests.
+- Added WS client scaffold and tested against local Mock websockets server.
+- Implemented ingestion worker that applies snapshots/deltas and persists to DB.
+- Added ingestion runner with resync-on-first-delta and gap logic; tests cover resync.
+- Introduced CLI (module) with subcommands: replay and ingest-ws; integration tests validate DB writes.
+- Added market_status and exec_audit tables; execution engine now persists orders/fills and audits.
+- Implemented spread refresh policy and a stateful SpreadQuoter; added tests.
+- Added manual snapshot and pruning utilities; tests verify retention.
+- Wrote deployment guide (docs/deployment.md) for Windows + uv.
