@@ -13,6 +13,7 @@ Architecture Overview
 - exec: opportunity detection, execution planning, two-phase order flow.
 - storage: event-sourced schema (orderbook events, trades, our orders/fills), snapshots, indices/partitions.
 - observability: structured logs, metrics, recordings (record/replay).
+  - metrics: per-market counters and timers; status surfaces applied/invalid/resync/quotes and engine timings.
 
 Data Ingestion
 - WS-first for real-time L2; REST for snapshots and resync.
@@ -35,7 +36,8 @@ Execution & Risk
 - IOC/FOK/limit; partial-fill handling and cancel/replace.
 - Health gates and circuit breakers; staleness thresholds; min_profit_usdc default 0.02.
 - Neg-risk/Other safeguards; rule hash watch.
- - Exposure guard: compute inventory from fills; cap per outcome; drop intents that breach cap.
+- Exposure guard: compute inventory from fills; cap per outcome; drop intents that breach cap.
+ - Cancel/replace policy: only replace sides when price change ≥ N ticks or size changed; per-market rate limiting.
 
 Testing (TDD)
 - Unit: math, book assembly, staleness, schema utilities, config loader.

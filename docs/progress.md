@@ -24,3 +24,7 @@ This file tracks decisions and incremental progress.
 - Implemented spread refresh policy and a stateful SpreadQuoter; added tests.
 - Added manual snapshot and pruning utilities; tests verify retention.
 - Wrote deployment guide (docs/deployment.md) for Windows + uv.
+- Added acceptance walkthrough (docs/acceptance-walkthrough.md) and README with quick commands.
+- Implemented service runner and config; mock WS, record/replay tooling.
+- Added per-market labelled metrics; status --verbose surfaces quote/order/engine timings.
+- Quoter tuned: rate limiting, per-side replace thresholds/intervals, cancel throttling.

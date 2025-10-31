@@ -28,6 +28,8 @@ This runbook covers common operational tasks for Polybot MVP in Phase 1.
   - Min requote interval
   - Movement-based refresh (tick/mid jump)
   - Inventory-aware sizing and cap enforcement
+  - Cancel/replace threshold by side (≥ N ticks or size change)
+  - Per-market rate limiting (token bucket)
 - In DB:
   - `orders` shows current status; canceled from replace cadence.
   - `exec_audit` captures plan payloads, plan_id, and duration.

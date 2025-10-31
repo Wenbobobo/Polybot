@@ -39,6 +39,7 @@ This guide explains how to set up, run, and operate the Polybot MVP components o
 ### Check Status
 - Show ingestion status per market:
   - `uv run python -m polybot.cli status --db-url sqlite:///./polybot.db`
+  - Verbose (quotes + engine timings): `uv run python -m polybot.cli status --db-url sqlite:///./polybot.db --verbose`
 
 ## Data Model & Retention
 - SQLite (WAL) development database with tables:
@@ -68,6 +69,7 @@ This guide explains how to set up, run, and operate the Polybot MVP components o
 - JSON structured logs to stdout.
 - Execution audit persisted in `exec_audit`.
 - Planned: metrics and dashboards (Prometheus) in later phases.
+ - In-process metrics: `uv run python -m polybot.cli metrics` shows counters (including per-market labelled values).
 
 ## Runbooks & Ops Tips
 - Ingestion appears stalled:
