@@ -32,6 +32,8 @@ from polybot.service.runner import ServiceRunner
 from polybot.observability.recording import write_jsonl, read_jsonl
 from polybot.observability.server import start_metrics_server
 from polybot.storage.migrate import migrate as migrate_db
+from polybot.tgbot.agent import BotAgent, BotContext
+from polybot.tgbot.runner import TelegramUpdateRunner
 
 
 def init_db(db_url: str):
@@ -281,7 +283,7 @@ async def cmd_dutch_run_replay_async(
     con = init_db(db_url)
     engine = ExecutionEngine(FakeRelayer(fill_ratio=0.0), audit_db=con)
     if outcomes_csv:
-        outcomes = outcomes_csv.split(",")
+        outcomes = [o.strip() for o in outcomes_csv.split(",") if o.strip()]
     else:
         rows = con.execute("SELECT outcome_id FROM outcomes WHERE market_id=? ORDER BY outcome_id", (market_id,)).fetchall()
         outcomes = [r[0] for r in rows]
@@ -298,6 +300,7 @@ async def cmd_dutch_run_replay_async(
         safety_margin_usdc=safety_margin_usdc,
         fee_bps=fee_bps,
         slippage_ticks=slippage_ticks,
+        allow_other=allow_other,
     )
 
     # Preload events to both run detection and compute final margin if verbose
@@ -422,13 +425,13 @@ def cmd_metrics_serve(host: str = "127.0.0.1", port: int = 0) -> int:
     return actual_port
 
 
-def cmd_migrate(db_url: str, print_sql: bool = False) -> str:
+def cmd_migrate(db_url: str, print_sql: bool = False, apply: bool = False) -> str:
     """Run or print DB migrations for the given URL.
 
     - SQLite: returns a summary (schema is applied by init_db in service/CLI).
     - PostgreSQL: prints SQL when print_sql=True; raises NotImplementedError otherwise.
     """
-    out = migrate_db(db_url, print_sql_only=print_sql)
+    out = migrate_db(db_url, print_sql_only=print_sql, apply=apply)
     if print_sql:
         print(out)
     else:
@@ -457,5 +460,19 @@ def cmd_relayer_dry_run(market_id: str, outcome_id: str, side: str, price: float
     plan = ExecutionPlan(intents=[OrderIntent(market_id=market_id, outcome_id=outcome_id, side=side, price=price, size=size, tif="IOC")], expected_profit=0.0, rationale="dry_run")
     res = engine.execute_plan(plan)
     out = f"placed={len(res.acks)} accepted={sum(1 for a in res.acks if a.accepted)}"
+    print(out)
+    return out
+
+
+def cmd_tgbot_run_local(updates_file: str, market_id: str, outcome_yes_id: str, db_url: str = ":memory:") -> str:
+    setup_logging()
+    con = init_db(db_url)
+    engine = ExecutionEngine(FakeRelayer(fill_ratio=0.0), audit_db=con)
+    agent = BotAgent(engine, BotContext(market_id=market_id, outcome_yes_id=outcome_yes_id))
+    runner = TelegramUpdateRunner(agent)
+    outputs: list[str] = []
+    for e in read_jsonl(updates_file):
+        outputs.append(runner.handle_update(e))
+    out = "\n".join(outputs)
     print(out)
     return out

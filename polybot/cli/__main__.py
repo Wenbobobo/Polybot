@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from .commands import cmd_replay, cmd_ingest_ws
-from .commands import cmd_status, cmd_refresh_markets, cmd_quoter_run_ws_async, cmd_health, cmd_metrics, cmd_record_ws_async, cmd_quoter_run_replay_async, cmd_mock_ws_async, cmd_metrics_export, cmd_metrics_serve, cmd_migrate, cmd_dutch_run_replay_async, cmd_relayer_dry_run, cmd_status_top
+from .commands import cmd_status, cmd_refresh_markets, cmd_quoter_run_ws_async, cmd_health, cmd_metrics, cmd_record_ws_async, cmd_quoter_run_replay_async, cmd_mock_ws_async, cmd_metrics_export, cmd_metrics_serve, cmd_migrate, cmd_dutch_run_replay_async, cmd_relayer_dry_run, cmd_status_top, cmd_tgbot_run_local
 from polybot.cli.commands import cmd_run_service_from_config_async
 
 
@@ -43,6 +43,7 @@ def main() -> None:
     p_migrate = sub.add_parser("migrate", help="Run or print DB migrations")
     p_migrate.add_argument("--db-url", required=True)
     p_migrate.add_argument("--print-sql", action="store_true")
+    p_migrate.add_argument("--apply", action="store_true")
 
     p_rec = sub.add_parser("record-ws", help="Record WS messages to JSONL (optionally translate Polymarket -> internal)")
     p_rec.add_argument("url")
@@ -99,6 +100,12 @@ def main() -> None:
     p_rdry.add_argument("--private-key", default="")
     p_rdry.add_argument("--db-url", default=":memory:")
 
+    p_tg = sub.add_parser("tgbot-run-local", help="Run offline Telegram-like updates from JSONL and print responses")
+    p_tg.add_argument("updates_file")
+    p_tg.add_argument("market_id")
+    p_tg.add_argument("outcome_yes_id")
+    p_tg.add_argument("--db-url", default=":memory:")
+
     args = parser.parse_args()
     if args.cmd == "replay":
         cmd_replay(args.file, args.market_id, db_url=args.db_url)
@@ -117,7 +124,7 @@ def main() -> None:
     elif args.cmd == "status-top":
         cmd_status_top(db_url=args.db_url, limit=args.limit)
     elif args.cmd == "migrate":
-        cmd_migrate(db_url=args.db_url, print_sql=args.print_sql)
+        cmd_migrate(db_url=args.db_url, print_sql=args.print_sql, apply=args.apply)
     elif args.cmd == "record-ws":
         import asyncio
         asyncio.run(cmd_record_ws_async(args.url, args.outfile, max_messages=args.max_messages, subscribe=args.subscribe, translate=not args.no_translate))
@@ -163,6 +170,8 @@ def main() -> None:
             private_key=args.private_key,
             db_url=args.db_url,
         )
+    elif args.cmd == "tgbot-run-local":
+        cmd_tgbot_run_local(args.updates_file, args.market_id, args.outcome_yes_id, db_url=args.db_url)
 
 
 if __name__ == "__main__":

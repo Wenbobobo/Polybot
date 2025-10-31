@@ -14,9 +14,11 @@
 - TDD: order API contracts, failure/retry, audit logging
 
 ## S3 Strategy: Dutch Book
-- Detector: sum(outcomes) < 1, tick/min-size/rule checks
-- Planner: batch orders; profit check incl. gas
-- TDD: replay and deterministic profit validation
+- Detector: sum(outcomes) < 1, tick/min-size/rule checks（避免Other）
+- Planner: 批量IOC下单；未来纳入费用/滑点（gas/fee）估计
+- Runner: 多Outcome订单簿聚合（DutchRunner），从消息流触发检测并执行
+- CLI: `dutch-run-replay` 从JSONL回放多Outcome消息
+- TDD: 回放与确定性利润校验；风控（库存上限、幂等）
 
 ## S4 Strategy: Spread Capture
 - Two-sided quoting, dynamic spread, inventory symmetry
@@ -33,4 +35,5 @@
 
 ## S7 Telegram Bot (post S2)
 - Alerts, status, optional approvals
-- Config and permissions model
+- Config and permissions model；托管下单（类似 gmgnbot）
+- 初版：离线命令解析与引擎联动（不依赖网络），后续接入 Telegram SDK 与权限校验

@@ -49,3 +49,13 @@ Performance Targets (initial)
 
 Open Items (tracked in roadmap)
 - Exact WS/REST payload schemas; relayer FOK/IOC semantics; CTF gas models.
+
+Dutch Book (S3) Design Notes
+- Input: 聚合一个市场的多Outcome最佳卖价；若 sum(asks) < 1 - min_profit_usdc，则触发。
+- Runner: `DutchRunner` 维护 outcome->orderbook 汇总，周期性构造 MarketQuotes 并调用 planner 生成 IOC 方案。
+- 幂等与风险：通过 ExecutionEngine 的 plan_id + client_oid 控制幂等，下单前用 `will_exceed_exposure` 校验库存上限。
+- 扩展：后续结合 rule_hash 检查、避免 Other、最小成交规模与Tick对齐；引入费用/滑点安全边际。
+
+Telegram 托管下单（预研）
+- 初版：`tgbot` 模块提供命令解析与引擎联动（/status、/buy、/sell、/arb），离线可测；
+- 正式版：接入官方 SDK 与 webhook，权限/白名单、最小下单额、确认流程（dry-run→确认→实盘），日志与审计。

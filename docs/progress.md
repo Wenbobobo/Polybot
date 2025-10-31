@@ -28,6 +28,11 @@ This file tracks decisions and incremental progress.
 - Implemented service runner and config; mock WS, record/replay tooling.
 - Added per-market labelled metrics; status --verbose surfaces quote/order/engine timings.
 - Quoter tuned: rate limiting, per-side replace thresholds/intervals, cancel throttling.
+ - Gamma HTTP: pagination + tests；市场刷新调度：抖动+jitter与错误退避。
+ - WS 翻译器：忽略非l2频道、支持data包裹与官方字段，严格schema校验；checksum匹配避免不必要重同步。
+ - 执行引擎：幂等(plan_id+client_oid)、重试（可配置）；Prometheus 导出与HTTP服务。
+ - Postgres：提供基线迁移SQL与CLI打印；连接选择器清晰失败模式。
+ - S3 开始：DutchRunner（多Outcome聚合）+ CLI `dutch-run-replay`；tgbot 初版（离线命令解析+下单）。
 
 Open Items (as of 2025-10-31)
 - Wire real Polymarket relayer (py-clob-client), add idempotency keys, map rich OrderAck; document allowances and dry-run mode.
