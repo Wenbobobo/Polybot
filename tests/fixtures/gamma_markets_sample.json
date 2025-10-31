@@ -1,0 +1,21 @@
+[
+  {
+    "id": "mkt-1",
+    "title": "Will X happen?",
+    "status": "active",
+    "outcomes": [
+      {"id": "o1", "name": "Yes"},
+      {"id": "o2", "name": "No"}
+    ]
+  },
+  {
+    "id": "mkt-2",
+    "title": "Which range?",
+    "status": "active",
+    "outcomes": [
+      {"id": "o3", "name": "<4000"},
+      {"id": "o4", "name": "4000-4400"},
+      {"id": "o5", "name": ">4400"}
+    ]
+  }
+]
