@@ -66,3 +66,23 @@ def test_spread_quotes_too_narrow_spread_returns_none():
     )
     assert plan is None
 
+
+def test_spread_quotes_pulled_on_large_mid_jump():
+    ob = OrderbookAssembler(market_id="m1")
+    ob.apply_snapshot({"seq": 1, "bids": [[0.40, 100.0]], "asks": [[0.47, 80.0]]})
+    book = ob.apply_delta({"seq": 2})
+    # last mid ~ 0.435; now simulate a big jump to 0.50
+    ob2 = OrderbookAssembler(market_id="m1")
+    ob2.apply_snapshot({"seq": 10, "bids": [[0.49, 100.0]], "asks": [[0.51, 100.0]]})
+    book2 = ob2.apply_delta({"seq": 11})
+    plan = plan_spread_quotes(
+        market_id="m1",
+        outcome_buy_id="yes",
+        outcome_sell_id="yes",
+        ob=book2,
+        now_ts_ms=1600,
+        last_update_ts_ms=1500,
+        params=SpreadParams(max_mid_jump=0.03),
+        last_mid=(book.best_bid().price + book.best_ask().price) / 2.0,
+    )
+    assert plan is None
