@@ -28,6 +28,7 @@ class QuoterState:
     last_quoted_sell_size: float | None = None
     last_replace_bid_ts_ms: int = 0
     last_replace_ask_ts_ms: int = 0
+    cancel_rate: TokenBucket | None = None
 
 
 class SpreadQuoter:
@@ -129,6 +130,18 @@ class SpreadQuoter:
 
         # Cancel only sides to be replaced
         if self.state.open_client_oids:
+            # Init cancel rate bucket
+            if self.state.cancel_rate is None:
+                self.state.cancel_rate = TokenBucket(capacity=self.params.cancel_rate_capacity, refill_per_sec=self.params.cancel_rate_refill_per_sec, tokens=self.params.cancel_rate_capacity)
+            # Decide which sides we are allowed to cancel now
+            permitted_sides: list[str] = []
+            for side in replace_sides:
+                if self.state.cancel_rate.allow(1.0, now_ms=now_ts_ms):
+                    permitted_sides.append(side)
+                else:
+                    inc_labelled("quotes_cancel_rate_limited", {"market": self.market_id})
+            # remove non-permitted sides from replacement
+            replace_sides = permitted_sides
             to_cancel = []
             for oid in self.state.open_client_oids:
                 if oid.endswith(":bid") and "bid" in replace_sides:
@@ -146,7 +159,7 @@ class SpreadQuoter:
         elif self.state.inventory <= -self.params.max_inventory:
             plan.intents = [i for i in plan.intents if i.side != "sell"]
             replace_sides = [s for s in replace_sides if s != "ask"]
-        # Retain only intents for sides that require replacement
+        # Retain only intents for sides that require replacement and are permitted (after cancel throttle)
         if replace_sides:
             plan.intents = [i for i in plan.intents if ((i.side == "buy" and "bid" in replace_sides) or (i.side == "sell" and "ask" in replace_sides))]
         # Risk check: do not execute if exposure cap would be exceeded

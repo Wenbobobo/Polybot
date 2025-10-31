@@ -22,6 +22,8 @@ class SpreadParams:
     rate_refill_per_sec: float = 1.0
     min_change_ticks: int = 1
     min_side_replace_interval_ms: int = 200
+    cancel_rate_capacity: float = 5.0
+    cancel_rate_refill_per_sec: float = 2.0
 
 
 def should_refresh_quotes(
