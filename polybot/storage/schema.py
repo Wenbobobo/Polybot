@@ -16,6 +16,19 @@ DDL = {
         );
         """
     ),
+    "outcomes": (
+        """
+        CREATE TABLE IF NOT EXISTS outcomes (
+            outcome_id TEXT PRIMARY KEY,
+            market_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            tick_size REAL NOT NULL DEFAULT 0.01,
+            min_size REAL NOT NULL DEFAULT 1.0,
+            FOREIGN KEY (market_id) REFERENCES markets(market_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_outcomes_market ON outcomes(market_id);
+        """
+    ),
     "orderbook_events": (
         """
         CREATE TABLE IF NOT EXISTS orderbook_events (
@@ -33,6 +46,53 @@ DDL = {
         CREATE UNIQUE INDEX IF NOT EXISTS u_obe_market_seq_id ON orderbook_events(market_id, seq, id);
         """
     ),
+    "orderbook_snapshots": (
+        """
+        CREATE TABLE IF NOT EXISTS orderbook_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market_id TEXT NOT NULL,
+            ts_ms INTEGER NOT NULL,
+            seq INTEGER NOT NULL,
+            best_bid REAL,
+            best_ask REAL,
+            mid REAL,
+            checksum TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_obs_market_ts ON orderbook_snapshots(market_id, ts_ms);
+        """
+    ),
+    "orders": (
+        """
+        CREATE TABLE IF NOT EXISTS orders (
+            order_id TEXT PRIMARY KEY,
+            client_oid TEXT,
+            market_id TEXT NOT NULL,
+            outcome_id TEXT NOT NULL,
+            side TEXT NOT NULL CHECK (side IN ('buy','sell')),
+            price REAL NOT NULL,
+            size REAL NOT NULL,
+            tif TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_ts_ms INTEGER NOT NULL,
+            updated_ts_ms INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_orders_market ON orders(market_id);
+        """
+    ),
+    "fills": (
+        """
+        CREATE TABLE IF NOT EXISTS fills (
+            fill_id TEXT PRIMARY KEY,
+            order_id TEXT NOT NULL,
+            ts_ms INTEGER NOT NULL,
+            price REAL NOT NULL,
+            size REAL NOT NULL,
+            fee REAL NOT NULL DEFAULT 0.0,
+            FOREIGN KEY (order_id) REFERENCES orders(order_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_fills_order ON fills(order_id);
+        """
+    ),
 }
 
 
@@ -47,4 +107,3 @@ def table_exists(con: sqlite3.Connection, name: str) -> bool:
     cur = con.cursor()
     cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (name,))
     return cur.fetchone() is not None
-

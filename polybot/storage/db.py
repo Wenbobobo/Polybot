@@ -21,3 +21,9 @@ def connect_sqlite(url: str) -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys = ON;")
     return con
 
+
+def enable_wal(con: sqlite3.Connection) -> None:
+    try:
+        con.execute("PRAGMA journal_mode = WAL;")
+    except sqlite3.DatabaseError:
+        pass
