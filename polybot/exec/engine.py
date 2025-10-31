@@ -33,6 +33,7 @@ class ExecutionEngine:
             )
             for i in plan.intents
         ]
+        start = int(time.time() * 1000)
         acks = self.relayer.place_orders(reqs)
         fully = all(a.remaining_size == 0.0 and a.accepted for a in acks)
         result = ExecutionResult(acks=acks, fully_filled=fully)
@@ -45,12 +46,17 @@ class ExecutionEngine:
         # optional audit persistence
         if self.audit_db is not None:
             try:
-                ts_ms = int(time.time() * 1000)
+                end = int(time.time() * 1000)
+                ts_ms = end
+                duration_ms = end - start
+                import uuid
+
+                plan_id = uuid.uuid4().hex
                 intents_json = json.dumps([i.__dict__ for i in plan.intents])
                 acks_json = json.dumps([a.__dict__ for a in acks])
                 self.audit_db.execute(
-                    "INSERT INTO exec_audit (ts_ms, plan_rationale, expected_profit, intents_json, acks_json) VALUES (?,?,?,?,?)",
-                    (ts_ms, plan.rationale, plan.expected_profit, intents_json, acks_json),
+                    "INSERT INTO exec_audit (ts_ms, plan_id, duration_ms, plan_rationale, expected_profit, intents_json, acks_json) VALUES (?,?,?,?,?,?,?)",
+                    (ts_ms, plan_id, duration_ms, plan.rationale, plan.expected_profit, intents_json, acks_json),
                 )
                 self.audit_db.commit()
             except Exception:

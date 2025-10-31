@@ -15,6 +15,9 @@ class SpreadParams:
     edge: float = 0.02  # distance from mid
     staleness_threshold_ms: int = 2000
     max_mid_jump: float = 0.03  # if mid moves more than this vs last, pull quotes
+    min_requote_interval_ms: int = 300  # do not requote more often than this
+    max_inventory: float = 100.0
+    rebalance_ratio: float = 0.5  # 0..1 strength of inventory rebalancing
 
 
 def should_refresh_quotes(

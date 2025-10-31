@@ -109,6 +109,8 @@ DDL = {
         CREATE TABLE IF NOT EXISTS exec_audit (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts_ms INTEGER NOT NULL,
+            plan_id TEXT,
+            duration_ms INTEGER,
             plan_rationale TEXT,
             expected_profit REAL,
             intents_json TEXT,

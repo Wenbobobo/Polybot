@@ -46,11 +46,13 @@ This guide explains how to set up, run, and operate the Polybot MVP components o
 - Manual snapshot and pruning utilities:
   - `OrderbookIngestor.persist_snapshot_now(ts_ms)`
   - `OrderbookIngestor.prune_events_before(ts_ms_threshold)`
+  - Scheduler support: periodic snapshots/pruning via `run_ingestion_session()`.
 
 ## Strategies (Phase 1)
 - Dutch Book (detector + planner only in tests).
 - Spread Capture (planner + refresh policy + quoter with FakeRelayer for simulation).
 - Execution engine persists orders/fills/audits to DB for traceability.
+  - Audits include a generated plan_id and measured duration_ms.
 
 ## Moving Toward Live Trading (Later Phases)
 - Keys & Security:
@@ -85,3 +87,6 @@ This guide explains how to set up, run, and operate the Polybot MVP components o
 - SQLite file: `sqlite:///./polybot.db`
 - SQLite in temp path: `sqlite:///C:/path/to/tmp/polybot.db`
 - PostgreSQL (future): `postgresql://user:pass@host:5432/polybot`
+### Simulate Spread Quoting from a Stream
+- Use the QuoterRunner (programmatic) to consume an event stream and generate/cancel quotes using the FakeRelayer and an in-memory DB. This is intended for offline validation and smoke testing of quote lifecycle before connecting to live relayers.
+- For a production-like run, wire the WS client to produce orderbook messages and pass them to `QuoterRunner` with a real relayer once credentials/allowances are in place.

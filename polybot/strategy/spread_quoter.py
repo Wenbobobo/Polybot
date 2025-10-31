@@ -17,6 +17,7 @@ class QuoterState:
     last_seq: int = 0
     open_client_oids: list[str] = None  # type: ignore[assignment]
     inventory: float = 0.0
+    last_quote_ts_ms: int = 0
 
 
 class SpreadQuoter:
@@ -37,8 +38,20 @@ class SpreadQuoter:
         mid = (bb.price + ba.price) / 2.0
 
         # Decide whether to (re)quote
+        elapsed_ok = (
+            (self.state.last_quote_ts_ms == 0)
+            or ((now_ts_ms - self.state.last_quote_ts_ms) >= self.params.min_requote_interval_ms)
+        )
         if self.state.last_bid is not None and self.state.last_ask is not None:
-            if not should_refresh_quotes(self.state.last_bid, self.state.last_ask, bb.price, ba.price, self.params.tick_size, self.params.max_mid_jump):
+            movement = should_refresh_quotes(
+                self.state.last_bid,
+                self.state.last_ask,
+                bb.price,
+                ba.price,
+                self.params.tick_size,
+                self.params.max_mid_jump,
+            )
+            if not movement and not elapsed_ok:
                 return None
 
         plan = plan_spread_quotes(
@@ -54,9 +67,18 @@ class SpreadQuoter:
         if plan is None:
             return None
         # Assign client order ids per side and cancel previous
+        # Inventory-aware sizing adjustment
+        base = self.params.size
+        inv = self.state.inventory
+        max_inv = max(1e-9, self.params.max_inventory)
+        amp = min(0.5, abs(inv) / max_inv * self.params.rebalance_ratio)
+        buy_size = base * (1.0 - amp if inv > 0 else 1.0 + amp)
+        sell_size = base * (1.0 + amp if inv > 0 else 1.0 - amp)
+
         for it in plan.intents:
             side_tag = "bid" if it.side == "buy" else "ask"
             it.client_order_id = f"q:{self.market_id}:{ob.seq}:{side_tag}"
+            it.size = buy_size if it.side == "buy" else sell_size
         if self.state.open_client_oids:
             self.engine.cancel_client_orders(self.state.open_client_oids)
 
@@ -67,6 +89,7 @@ class SpreadQuoter:
         self.state.last_ask = ba.price
         self.state.last_mid = mid
         self.state.last_seq = ob.seq
+        self.state.last_quote_ts_ms = now_ts_ms
         for ack, intent in zip(res.acks, plan.intents):
             if intent.side == "buy":
                 self.state.inventory += ack.filled_size
