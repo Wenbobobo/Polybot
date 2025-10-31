@@ -7,6 +7,8 @@ from typing import Optional
 from polybot.core.models import OrderBook
 from polybot.strategy.spread import plan_spread_quotes, SpreadParams, should_refresh_quotes
 from polybot.exec.engine import ExecutionEngine
+from polybot.exec.risk import will_exceed_exposure
+from polybot.observability.metrics import inc_labelled
 
 
 @dataclass
@@ -52,6 +54,7 @@ class SpreadQuoter:
                 self.params.max_mid_jump,
             )
             if not movement and not elapsed_ok:
+                inc_labelled("quotes_skipped", {"market": self.market_id})
                 return None
 
         plan = plan_spread_quotes(
@@ -81,8 +84,24 @@ class SpreadQuoter:
             it.size = buy_size if it.side == "buy" else sell_size
         if self.state.open_client_oids:
             self.engine.cancel_client_orders(self.state.open_client_oids)
+            inc_labelled("quotes_canceled", {"market": self.market_id}, len(self.state.open_client_oids))
+
+        # Enforce inventory cap by suppressing side that increases exposure further
+        if self.state.inventory >= self.params.max_inventory:
+            plan.intents = [i for i in plan.intents if i.side != "buy"]
+        elif self.state.inventory <= -self.params.max_inventory:
+            plan.intents = [i for i in plan.intents if i.side != "sell"]
+        # Risk check: do not execute if exposure cap would be exceeded
+        if not plan.intents:
+            return None
+        blocked, _ = (False, 0.0)
+        if getattr(self.engine, "audit_db", None) is not None:
+            blocked, _ = will_exceed_exposure(self.engine.audit_db, plan, cap_per_outcome=self.params.max_inventory)
+        if blocked:
+            return None
 
         res = self.engine.execute_plan(plan)
+        inc_labelled("quotes_placed", {"market": self.market_id}, len(plan.intents))
         self.state.open_client_oids = [i.client_order_id for i in plan.intents if i.client_order_id]
         # Update state with current levels regardless of fill
         self.state.last_bid = bb.price

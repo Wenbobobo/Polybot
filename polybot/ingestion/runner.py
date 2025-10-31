@@ -4,6 +4,9 @@ from typing import AsyncIterator, Dict, Any, Optional, Callable
 
 from .orderbook import OrderbookIngestor
 from .snapshot import SnapshotProvider
+from polybot.core.checksum import orderbook_checksum
+from .validator import validate_message
+from polybot.observability.metrics import inc, inc_labelled
 
 
 async def run_orderbook_stream(
@@ -26,12 +29,19 @@ async def run_orderbook_stream(
         typ = msg.get("type")
         if typ not in ("snapshot", "delta"):
             continue
+        ok, reason = validate_message(msg)
+        if not ok:
+            inc("ingestion_msg_invalid")
+            inc_labelled("ingestion_msg_invalid", {"market": market_id})
+            continue
 
         if first_seen and typ != "snapshot":
             snap = snapshot_provider.get_snapshot(market_id)
             snap.setdefault("type", "snapshot")
             ts = now_ms() if now_ms else None
             ingestor.process(snap, ts_ms=ts)
+            inc("ingestion_resync_first_delta")
+            inc_labelled("ingestion_resync_first_delta", {"market": market_id})
             first_seen = False
 
         if typ == "delta":
@@ -43,7 +53,26 @@ async def run_orderbook_stream(
                 snap.setdefault("type", "snapshot")
                 ts = now_ms() if now_ms else None
                 ingestor.process(snap, ts_ms=ts)
+                inc("ingestion_resync_gap")
+                inc_labelled("ingestion_resync_gap", {"market": market_id})
 
         ts = now_ms() if now_ms else None
         ingestor.process(msg, ts_ms=ts)
+        inc("ingestion_msg_applied")
+        inc_labelled("ingestion_msg_applied", {"market": market_id})
+        # Optional checksum verification on delta messages
+        if typ == "delta" and "checksum" in msg:
+            book = ingestor.assembler
+            # materialize current OrderBook
+            ob = book.apply_delta({"seq": book._seq})
+            bb = ob.bids
+            aa = ob.asks
+            local = orderbook_checksum(bb, aa)
+            if local != msg.get("checksum"):
+                snap = snapshot_provider.get_snapshot(market_id)
+                snap.setdefault("type", "snapshot")
+                ts2 = now_ms() if now_ms else None
+                ingestor.process(snap, ts_ms=ts2)
+                inc("ingestion_resync_checksum")
+                inc_labelled("ingestion_resync_checksum", {"market": market_id})
         first_seen = False

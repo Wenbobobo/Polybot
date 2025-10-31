@@ -8,6 +8,7 @@ from typing import List, Optional
 from polybot.exec.planning import ExecutionPlan
 from polybot.adapters.polymarket.relayer import OrderRequest, FakeRelayer, OrderAck
 from polybot.storage.orders import persist_orders_and_fills, mark_canceled_by_client_oids
+from polybot.observability.metrics import inc, Timer
 
 
 @dataclass
@@ -33,9 +34,12 @@ class ExecutionEngine:
             )
             for i in plan.intents
         ]
-        start = int(time.time() * 1000)
-        acks = self.relayer.place_orders(reqs)
+        start_perf = time.perf_counter()
+        with Timer("engine_execute_plan"):
+            acks = self.relayer.place_orders(reqs)
         fully = all(a.remaining_size == 0.0 and a.accepted for a in acks)
+        inc("orders_placed", len(reqs))
+        inc("orders_filled", sum(1 for a in acks if a.remaining_size == 0.0 and a.accepted))
         result = ExecutionResult(acks=acks, fully_filled=fully)
         # persist orders/fills if DB configured
         if self.audit_db is not None:
@@ -46,9 +50,8 @@ class ExecutionEngine:
         # optional audit persistence
         if self.audit_db is not None:
             try:
-                end = int(time.time() * 1000)
-                ts_ms = end
-                duration_ms = end - start
+                ts_ms = int(time.time() * 1000)
+                duration_ms = int((time.perf_counter() - start_perf) * 1000)
                 import uuid
 
                 plan_id = uuid.uuid4().hex
