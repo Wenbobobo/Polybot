@@ -18,6 +18,9 @@ class SpreadParams:
     min_requote_interval_ms: int = 300  # do not requote more often than this
     max_inventory: float = 100.0
     rebalance_ratio: float = 0.5  # 0..1 strength of inventory rebalancing
+    rate_capacity: float = 5.0
+    rate_refill_per_sec: float = 1.0
+    min_change_ticks: int = 1
 
 
 def should_refresh_quotes(

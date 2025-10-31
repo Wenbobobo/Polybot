@@ -159,7 +159,7 @@ async def cmd_quoter_run_ws_async(
 
 async def cmd_run_service_from_config_async(config_path: str) -> None:
     cfg = load_service_config(config_path)
-    sr = ServiceRunner(db_url=cfg.db_url)
+    sr = ServiceRunner(db_url=cfg.db_url, params=cfg.default_spread)
     await sr.run_markets(cfg.markets)
 
 

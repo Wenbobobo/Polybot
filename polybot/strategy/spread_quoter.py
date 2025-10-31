@@ -9,6 +9,7 @@ from polybot.strategy.spread import plan_spread_quotes, SpreadParams, should_ref
 from polybot.exec.engine import ExecutionEngine
 from polybot.exec.risk import will_exceed_exposure
 from polybot.observability.metrics import inc_labelled
+from polybot.core.ratelimit import TokenBucket
 
 
 @dataclass
@@ -20,6 +21,7 @@ class QuoterState:
     open_client_oids: list[str] = None  # type: ignore[assignment]
     inventory: float = 0.0
     last_quote_ts_ms: int = 0
+    rate: TokenBucket | None = None
 
 
 class SpreadQuoter:
@@ -44,6 +46,12 @@ class SpreadQuoter:
             (self.state.last_quote_ts_ms == 0)
             or ((now_ts_ms - self.state.last_quote_ts_ms) >= self.params.min_requote_interval_ms)
         )
+        # Rate limit
+        if self.state.rate is None:
+            self.state.rate = TokenBucket(capacity=self.params.rate_capacity, refill_per_sec=self.params.rate_refill_per_sec, tokens=self.params.rate_capacity)
+        if not self.state.rate.allow(1.0, now_ms=now_ts_ms):
+            inc_labelled("quotes_rate_limited", {"market": self.market_id})
+            return None
         if self.state.last_bid is not None and self.state.last_ask is not None:
             movement = should_refresh_quotes(
                 self.state.last_bid,

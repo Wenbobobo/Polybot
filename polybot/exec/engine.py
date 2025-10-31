@@ -8,7 +8,7 @@ from typing import List, Optional
 from polybot.exec.planning import ExecutionPlan
 from polybot.adapters.polymarket.relayer import OrderRequest, FakeRelayer, OrderAck
 from polybot.storage.orders import persist_orders_and_fills, mark_canceled_by_client_oids
-from polybot.observability.metrics import inc, Timer
+from polybot.observability.metrics import inc, inc_labelled, Timer
 
 
 @dataclass
@@ -35,11 +35,23 @@ class ExecutionEngine:
             for i in plan.intents
         ]
         start_perf = time.perf_counter()
+        start_perf = time.perf_counter()
         with Timer("engine_execute_plan"):
             acks = self.relayer.place_orders(reqs)
         fully = all(a.remaining_size == 0.0 and a.accepted for a in acks)
         inc("orders_placed", len(reqs))
         inc("orders_filled", sum(1 for a in acks if a.remaining_size == 0.0 and a.accepted))
+        # labelled per-market counters
+        for it, ack in zip(plan.intents, acks):
+            inc_labelled("orders_placed", {"market": it.market_id}, 1)
+            if ack.remaining_size == 0.0 and ack.accepted:
+                inc_labelled("orders_filled", {"market": it.market_id}, 1)
+        # labelled duration per market (same duration applied to all intents' markets in this simple model)
+        dur_ms = int((time.perf_counter() - start_perf) * 1000)
+        seen_markets = set(i.market_id for i in plan.intents)
+        for mid in seen_markets:
+            inc_labelled("engine_execute_plan_ms_sum", {"market": mid}, dur_ms)
+            inc_labelled("engine_execute_plan_count", {"market": mid}, 1)
         result = ExecutionResult(acks=acks, fully_filled=fully)
         # persist orders/fills if DB configured
         if self.audit_db is not None:
