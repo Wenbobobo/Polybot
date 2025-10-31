@@ -28,6 +28,8 @@ from polybot.observability.prometheus import export_text as prometheus_export_te
 from polybot.service.config import load_service_config
 from polybot.service.runner import ServiceRunner
 from polybot.observability.recording import write_jsonl, read_jsonl
+from polybot.observability.server import start_metrics_server
+from polybot.storage.migrate import migrate as migrate_db
 
 
 def init_db(db_url: str):
@@ -73,8 +75,11 @@ def cmd_status(db_url: str = ":memory:", verbose: bool = False) -> str:
             ems = get_counter_labelled("engine_execute_plan_ms_sum", {"market": mkt})
             ec = get_counter_labelled("engine_execute_plan_count", {"market": mkt})
             avg_ms = (ems / ec) if ec else 0
+            total_resyncs = gap + csum + firstd
+            resync_ratio = (total_resyncs / max(1, applied)) if applied else 0
             lines.append(f"  quotes: placed={qp} canceled={qc} skipped={qs} skipped_same={qss} rate_limited={qrl}")
             lines.append(f"  orders: placed={op} filled={of} exec_avg_ms={avg_ms:.1f} exec_count={ec}")
+            lines.append(f"  resyncs: total={total_resyncs} ratio={resync_ratio:.3f}")
     out = "\n".join(lines)
     print(out)
     return out
@@ -281,3 +286,30 @@ async def cmd_ingest_ws_async(url: str, market_id: str, snapshot_json: Optional[
 
 def cmd_ingest_ws(url: str, market_id: str, snapshot_json: Optional[str] = None, db_url: str = ":memory:", max_messages: Optional[int] = None) -> None:
     asyncio.run(cmd_ingest_ws_async(url, market_id, snapshot_json=snapshot_json, db_url=db_url, max_messages=max_messages))
+
+
+def cmd_metrics_serve(host: str = "127.0.0.1", port: int = 0) -> int:
+    server, _ = start_metrics_server(host, port)
+    actual_port = server.server_address[1]
+    print(f"metrics-serve listening on http://{host}:{actual_port}/metrics")
+    try:
+        import time
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        server.shutdown()
+    return actual_port
+
+
+def cmd_migrate(db_url: str, print_sql: bool = False) -> str:
+    """Run or print DB migrations for the given URL.
+
+    - SQLite: returns a summary (schema is applied by init_db in service/CLI).
+    - PostgreSQL: prints SQL when print_sql=True; raises NotImplementedError otherwise.
+    """
+    out = migrate_db(db_url, print_sql_only=print_sql)
+    if print_sql:
+        print(out)
+    else:
+        print(str(out))
+    return out

@@ -14,6 +14,10 @@ def translate_polymarket_message(msg: Dict[str, Any]) -> Optional[Dict[str, Any]
     """
     # Some payloads may wrap the actual L2 fields under a `data` key
     base: Dict[str, Any] = msg.get("data") if isinstance(msg.get("data"), dict) else msg
+    # If a channel is provided, only accept L2 channel messages
+    ch = msg.get("channel") or base.get("channel")
+    if ch is not None and ch != "l2":
+        return None
     t = base.get("type", msg.get("type"))
     if t == "snapshot" or t == "delta":
         return base

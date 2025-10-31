@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from .commands import cmd_replay, cmd_ingest_ws
-from .commands import cmd_status, cmd_refresh_markets, cmd_quoter_run_ws_async, cmd_health, cmd_metrics, cmd_record_ws_async, cmd_quoter_run_replay_async, cmd_mock_ws_async, cmd_metrics_export
+from .commands import cmd_status, cmd_refresh_markets, cmd_quoter_run_ws_async, cmd_health, cmd_metrics, cmd_record_ws_async, cmd_quoter_run_replay_async, cmd_mock_ws_async, cmd_metrics_export, cmd_metrics_serve, cmd_migrate
 from polybot.cli.commands import cmd_run_service_from_config_async
 
 
@@ -33,6 +33,13 @@ def main() -> None:
 
     sub.add_parser("metrics", help="Print in-process metrics counters")
     sub.add_parser("metrics-export", help="Print Prometheus text exposition of metrics")
+    p_mserve = sub.add_parser("metrics-serve", help="Serve /metrics over HTTP (local only)")
+    p_mserve.add_argument("--host", default="127.0.0.1")
+    p_mserve.add_argument("--port", type=int, default=0)
+
+    p_migrate = sub.add_parser("migrate", help="Run or print DB migrations")
+    p_migrate.add_argument("--db-url", required=True)
+    p_migrate.add_argument("--print-sql", action="store_true")
 
     p_rec = sub.add_parser("record-ws", help="Record WS messages to JSONL (optionally translate Polymarket -> internal)")
     p_rec.add_argument("url")
@@ -79,6 +86,10 @@ def main() -> None:
         cmd_metrics()
     elif args.cmd == "metrics-export":
         cmd_metrics_export()
+    elif args.cmd == "metrics-serve":
+        cmd_metrics_serve(host=args.host, port=args.port)
+    elif args.cmd == "migrate":
+        cmd_migrate(db_url=args.db_url, print_sql=args.print_sql)
     elif args.cmd == "record-ws":
         import asyncio
         asyncio.run(cmd_record_ws_async(args.url, args.outfile, max_messages=args.max_messages, subscribe=args.subscribe, translate=not args.no_translate))
