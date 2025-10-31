@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from .commands import cmd_replay, cmd_ingest_ws
-from .commands import cmd_status, cmd_refresh_markets, cmd_quoter_run_ws_async, cmd_health, cmd_metrics, cmd_record_ws_async, cmd_quoter_run_replay_async
+from .commands import cmd_status, cmd_refresh_markets, cmd_quoter_run_ws_async, cmd_health, cmd_metrics, cmd_record_ws_async, cmd_quoter_run_replay_async, cmd_mock_ws_async
 from polybot.cli.commands import cmd_run_service_from_config_async
 
 
@@ -25,6 +25,7 @@ def main() -> None:
 
     p_status = sub.add_parser("status", help="Show market ingestion status")
     p_status.add_argument("--db-url", default=":memory:")
+    p_status.add_argument("--verbose", action="store_true")
 
     p_health = sub.add_parser("health", help="Health check: staleness")
     p_health.add_argument("--db-url", default=":memory:")
@@ -45,6 +46,10 @@ def main() -> None:
     p_qrep.add_argument("outcome_yes_id")
     p_qrep.add_argument("--db-url", default=":memory:")
 
+    p_mws = sub.add_parser("mock-ws", help="Run a simple mock WS server emitting Polymarket-like messages")
+    p_mws.add_argument("--file")
+    p_mws.add_argument("--host", default="127.0.0.1")
+    p_mws.add_argument("--port", type=int, default=9000)
     p_refresh = sub.add_parser("refresh-markets", help="Refresh markets catalog from Gamma")
     p_refresh.add_argument("base_url")
     p_refresh.add_argument("--db-url", default=":memory:")
@@ -66,7 +71,7 @@ def main() -> None:
     elif args.cmd == "ingest-ws":
         cmd_ingest_ws(args.url, args.market_id, snapshot_json=args.snapshot_json, db_url=args.db_url, max_messages=args.max_messages)
     elif args.cmd == "status":
-        cmd_status(db_url=args.db_url)
+        cmd_status(db_url=args.db_url, verbose=args.verbose)
     elif args.cmd == "health":
         cmd_health(db_url=args.db_url, staleness_threshold_ms=args.staleness_ms)
     elif args.cmd == "metrics":
@@ -77,6 +82,9 @@ def main() -> None:
     elif args.cmd == "quoter-run-replay":
         import asyncio
         asyncio.run(cmd_quoter_run_replay_async(args.file, args.market_id, args.outcome_yes_id, db_url=args.db_url))
+    elif args.cmd == "mock-ws":
+        import asyncio
+        asyncio.run(cmd_mock_ws_async(messages_file=args.file, host=args.host, port=args.port))
     elif args.cmd == "refresh-markets":
         cmd_refresh_markets(base_url=args.base_url, db_url=args.db_url)
     elif args.cmd == "quoter-run-ws":

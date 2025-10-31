@@ -44,7 +44,7 @@ def cmd_replay(file: str, market_id: str, db_url: str = ":memory:") -> None:
         ing.process(event)
 
 
-def cmd_status(db_url: str = ":memory:") -> str:
+def cmd_status(db_url: str = ":memory:", verbose: bool = False) -> str:
     """Return a human-readable status summary string for markets in DB."""
     con = connect_sqlite(db_url)
     rows = con.execute(
@@ -61,6 +61,19 @@ def cmd_status(db_url: str = ":memory:") -> str:
         csum = get_counter_labelled("ingestion_resync_checksum", {"market": mkt})
         firstd = get_counter_labelled("ingestion_resync_first_delta", {"market": mkt})
         lines.append(f"{mkt} {r[1]} {r[2]} {r[3]} {r[4]} {applied} {invalid} {gap} {csum} {firstd}")
+        if verbose:
+            qp = get_counter_labelled("quotes_placed", {"market": mkt})
+            qc = get_counter_labelled("quotes_canceled", {"market": mkt})
+            qs = get_counter_labelled("quotes_skipped", {"market": mkt})
+            qss = get_counter_labelled("quotes_skipped_same", {"market": mkt})
+            qrl = get_counter_labelled("quotes_rate_limited", {"market": mkt})
+            op = get_counter_labelled("orders_placed", {"market": mkt})
+            of = get_counter_labelled("orders_filled", {"market": mkt})
+            ems = get_counter_labelled("engine_execute_plan_ms_sum", {"market": mkt})
+            ec = get_counter_labelled("engine_execute_plan_count", {"market": mkt})
+            avg_ms = (ems / ec) if ec else 0
+            lines.append(f"  quotes: placed={qp} canceled={qc} skipped={qs} skipped_same={qss} rate_limited={qrl}")
+            lines.append(f"  orders: placed={op} filled={of} exec_avg_ms={avg_ms:.1f} exec_count={ec}")
     out = "\n".join(lines)
     print(out)
     return out
@@ -200,6 +213,36 @@ async def cmd_quoter_run_replay_async(file: str, market_id: str, outcome_yes_id:
 
     now_ms = lambda: int(time.time() * 1000)
     await runner.run(_aiter(), now_ms)
+
+
+async def cmd_mock_ws_async(messages_file: Optional[str] = None, host: str = "127.0.0.1", port: int = 9000) -> None:
+    import json
+    import websockets
+    msgs = None
+    if messages_file:
+        msgs = json.loads(Path(messages_file).read_text(encoding="utf-8"))
+    else:
+        msgs = [
+            {"type": "l2_snapshot", "seq": 1, "bids": [[0.40, 100.0]], "asks": [[0.47, 100.0]]},
+            {"type": "l2_update", "seq": 2},
+            {"type": "l2_update", "seq": 3, "bids": [[0.41, 10.0]]},
+        ]
+
+    async def handler(websocket):
+        try:
+            # optional subscribe
+            await asyncio.wait_for(websocket.recv(), timeout=0.2)
+        except Exception:
+            pass
+        for m in msgs:
+            await websocket.send(json.dumps(m))
+        await asyncio.sleep(0.05)
+
+    server = await websockets.serve(handler, host, port)
+    print(f"mock-ws listening on ws://{host}:{port} and will close after sending {len(msgs)} messages")
+    await asyncio.sleep(0.5)
+    server.close()
+    await server.wait_closed()
 
 
 async def _aiter_from_ws(url: str, max_messages: Optional[int] = None):

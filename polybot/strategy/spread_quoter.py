@@ -22,6 +22,12 @@ class QuoterState:
     inventory: float = 0.0
     last_quote_ts_ms: int = 0
     rate: TokenBucket | None = None
+    last_quoted_bid: float | None = None
+    last_quoted_ask: float | None = None
+    last_quoted_buy_size: float | None = None
+    last_quoted_sell_size: float | None = None
+    last_replace_bid_ts_ms: int = 0
+    last_replace_ask_ts_ms: int = 0
 
 
 class SpreadQuoter:
@@ -77,7 +83,7 @@ class SpreadQuoter:
         )
         if plan is None:
             return None
-        # Assign client order ids per side and cancel previous
+        # Assign client order ids per side and cancel/replace policy
         # Inventory-aware sizing adjustment
         base = self.params.size
         inv = self.state.inventory
@@ -86,19 +92,63 @@ class SpreadQuoter:
         buy_size = base * (1.0 - amp if inv > 0 else 1.0 + amp)
         sell_size = base * (1.0 + amp if inv > 0 else 1.0 - amp)
 
+        intended = {}
         for it in plan.intents:
             side_tag = "bid" if it.side == "buy" else "ask"
             it.client_order_id = f"q:{self.market_id}:{ob.seq}:{side_tag}"
             it.size = buy_size if it.side == "buy" else sell_size
+            intended[side_tag] = (it.price, it.size)
+
+        # Determine replacement need per side based on min_change_ticks threshold and size change
+        replace_sides: list[str] = []
+        tick = self.params.tick_size
+        min_change = self.params.min_change_ticks * tick
+        if "bid" in intended:
+            p, s = intended["bid"]
+            if self.state.last_quoted_bid is None or abs(p - (self.state.last_quoted_bid or 0.0)) >= min_change or (self.state.last_quoted_buy_size is not None and abs(s - self.state.last_quoted_buy_size) > 0):
+                replace_sides.append("bid")
+        if "ask" in intended:
+            p, s = intended["ask"]
+            if self.state.last_quoted_ask is None or abs(p - (self.state.last_quoted_ask or 0.0)) >= min_change or (self.state.last_quoted_sell_size is not None and abs(s - self.state.last_quoted_sell_size) > 0):
+                replace_sides.append("ask")
+
+        # Enforce per-side minimum replace interval
+        side_intervals_ok: list[str] = []
+        for side in replace_sides:
+            if side == "bid":
+                if self.state.last_replace_bid_ts_ms == 0 or (now_ts_ms - self.state.last_replace_bid_ts_ms) >= self.params.min_side_replace_interval_ms:
+                    side_intervals_ok.append("bid")
+            else:
+                if self.state.last_replace_ask_ts_ms == 0 or (now_ts_ms - self.state.last_replace_ask_ts_ms) >= self.params.min_side_replace_interval_ms:
+                    side_intervals_ok.append("ask")
+        replace_sides = side_intervals_ok
+
+        if not replace_sides:
+            inc_labelled("quotes_skipped_same", {"market": self.market_id})
+            return None
+
+        # Cancel only sides to be replaced
         if self.state.open_client_oids:
-            self.engine.cancel_client_orders(self.state.open_client_oids)
-            inc_labelled("quotes_canceled", {"market": self.market_id}, len(self.state.open_client_oids))
+            to_cancel = []
+            for oid in self.state.open_client_oids:
+                if oid.endswith(":bid") and "bid" in replace_sides:
+                    to_cancel.append(oid)
+                if oid.endswith(":ask") and "ask" in replace_sides:
+                    to_cancel.append(oid)
+            if to_cancel:
+                self.engine.cancel_client_orders(to_cancel)
+                inc_labelled("quotes_canceled", {"market": self.market_id}, len(to_cancel))
 
         # Enforce inventory cap by suppressing side that increases exposure further
         if self.state.inventory >= self.params.max_inventory:
             plan.intents = [i for i in plan.intents if i.side != "buy"]
+            replace_sides = [s for s in replace_sides if s != "bid"]
         elif self.state.inventory <= -self.params.max_inventory:
             plan.intents = [i for i in plan.intents if i.side != "sell"]
+            replace_sides = [s for s in replace_sides if s != "ask"]
+        # Retain only intents for sides that require replacement
+        if replace_sides:
+            plan.intents = [i for i in plan.intents if ((i.side == "buy" and "bid" in replace_sides) or (i.side == "sell" and "ask" in replace_sides))]
         # Risk check: do not execute if exposure cap would be exceeded
         if not plan.intents:
             return None
@@ -117,6 +167,13 @@ class SpreadQuoter:
         self.state.last_mid = mid
         self.state.last_seq = ob.seq
         self.state.last_quote_ts_ms = now_ts_ms
+        # Update last quoted levels for replaced sides
+        if "bid" in replace_sides and "bid" in intended:
+            self.state.last_quoted_bid, self.state.last_quoted_buy_size = intended["bid"]
+            self.state.last_replace_bid_ts_ms = now_ts_ms
+        if "ask" in replace_sides and "ask" in intended:
+            self.state.last_quoted_ask, self.state.last_quoted_sell_size = intended["ask"]
+            self.state.last_replace_ask_ts_ms = now_ts_ms
         for ack, intent in zip(res.acks, plan.intents):
             if intent.side == "buy":
                 self.state.inventory += ack.filled_size

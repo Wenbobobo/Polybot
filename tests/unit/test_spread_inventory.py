@@ -43,7 +43,7 @@ def test_min_requote_interval_prevents_frequent_quotes():
     # Next step within interval: skip
     res2 = quoter.step(ob.apply_delta({"seq": 3}), now_ts_ms=1200, last_update_ts_ms=1100)
     assert res2 is None
-    # After interval: allow
-    res3 = quoter.step(ob.apply_delta({"seq": 4}), now_ts_ms=1700, last_update_ts_ms=1600)
+    # After interval and small movement: allow
+    ob.apply_delta({"seq": 4, "bids": [[0.41, 1.0]], "asks": [[0.46, 1.0]]})
+    res3 = quoter.step(ob.apply_delta({"seq": 5}), now_ts_ms=1700, last_update_ts_ms=1600)
     assert res3 is not None
-
