@@ -26,4 +26,6 @@ def test_spread_quoter_quotes_on_move_and_skips_when_stable():
     ob.apply_delta({"seq": 4, "bids": [[0.41, 10.0]]})
     res3 = quoter.step(ob.apply_delta({"seq": 5}), now_ts_ms=1200, last_update_ts_ms=1100)
     assert res3 is not None
-
+    # Ensure previous client orders were canceled
+    rows = con.execute("SELECT COUNT(*) FROM orders WHERE status='canceled'").fetchone()[0]
+    assert rows >= 2

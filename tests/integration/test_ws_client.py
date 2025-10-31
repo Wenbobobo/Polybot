@@ -9,8 +9,11 @@ from polybot.adapters.polymarket.ws import OrderbookWSClient
 
 
 @asynccontextmanager
-async def ws_server(messages):
+async def ws_server(messages, expect_subscribe: dict | None = None):
     async def handler(websocket):
+        if expect_subscribe is not None:
+            raw = await websocket.recv()
+            assert json.loads(raw) == expect_subscribe
         for m in messages:
             await websocket.send(json.dumps(m))
         await asyncio.sleep(0.05)
@@ -39,3 +42,15 @@ async def test_ws_client_receives_messages():
                     break
     assert received == events
 
+
+@pytest.mark.asyncio
+async def test_ws_client_sends_subscribe_before_receiving():
+    events = [{"type": "snapshot", "seq": 1, "bids": [], "asks": []}]
+    subscribe = {"op": "subscribe", "channel": "orderbook", "market": "m1"}
+    async with ws_server(events, expect_subscribe=subscribe) as url:
+        async with OrderbookWSClient(url, subscribe_message=subscribe) as client:
+            msgs = []
+            async for m in client.messages():
+                msgs.append(m.raw)
+                break
+    assert msgs and msgs[0]["type"] == "snapshot"

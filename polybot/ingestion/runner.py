@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import AsyncIterator, Dict, Any
+from typing import AsyncIterator, Dict, Any, Optional, Callable
 
 from .orderbook import OrderbookIngestor
 from .snapshot import SnapshotProvider
@@ -11,6 +11,7 @@ async def run_orderbook_stream(
     messages: AsyncIterator[Dict[str, Any]],
     ingestor: OrderbookIngestor,
     snapshot_provider: SnapshotProvider,
+    now_ms: Optional[Callable[[], int]] = None,
 ) -> None:
     """Process an async stream of orderbook messages with resync logic.
 
@@ -29,7 +30,8 @@ async def run_orderbook_stream(
         if first_seen and typ != "snapshot":
             snap = snapshot_provider.get_snapshot(market_id)
             snap.setdefault("type", "snapshot")
-            ingestor.process(snap)
+            ts = now_ms() if now_ms else None
+            ingestor.process(snap, ts_ms=ts)
             first_seen = False
 
         if typ == "delta":
@@ -39,8 +41,9 @@ async def run_orderbook_stream(
             if cur_seq and delta_seq != cur_seq + 1:
                 snap = snapshot_provider.get_snapshot(market_id)
                 snap.setdefault("type", "snapshot")
-                ingestor.process(snap)
+                ts = now_ms() if now_ms else None
+                ingestor.process(snap, ts_ms=ts)
 
-        ingestor.process(msg)
+        ts = now_ms() if now_ms else None
+        ingestor.process(msg, ts_ms=ts)
         first_seen = False
-

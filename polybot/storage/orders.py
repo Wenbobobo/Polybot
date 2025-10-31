@@ -42,3 +42,12 @@ def persist_orders_and_fills(con: sqlite3.Connection, intents: List[OrderIntent]
             )
     con.commit()
 
+
+def mark_canceled_by_client_oids(con: sqlite3.Connection, client_oids: List[str]) -> int:
+    ts_ms = int(time.time() * 1000)
+    cur = con.execute(
+        f"UPDATE orders SET status='canceled', updated_ts_ms=? WHERE client_oid IN ({','.join(['?']*len(client_oids))})",
+        (ts_ms, *client_oids),
+    )
+    con.commit()
+    return cur.rowcount

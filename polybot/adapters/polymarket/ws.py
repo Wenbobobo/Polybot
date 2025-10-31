@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Optional, Any, Dict
 
 import websockets
 
@@ -20,13 +20,16 @@ class OrderbookWSClient:
     It simply connects and yields JSON-decoded messages for tests and ingestion scaffolding.
     """
 
-    def __init__(self, url: str, ping_interval: float = 20.0):
+    def __init__(self, url: str, ping_interval: float = 20.0, subscribe_message: Optional[Dict[str, Any]] = None):
         self.url = url
         self.ping_interval = ping_interval
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
+        self._subscribe_message = subscribe_message
 
     async def __aenter__(self) -> "OrderbookWSClient":
         self._ws = await websockets.connect(self.url, ping_interval=self.ping_interval)
+        if self._subscribe_message is not None:
+            await self._ws.send(json.dumps(self._subscribe_message))
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -48,4 +51,3 @@ class OrderbookWSClient:
                 except Exception:
                     continue
             yield WSMessage(raw=payload)
-

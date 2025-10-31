@@ -15,6 +15,8 @@ class QuoterState:
     last_ask: Optional[float] = None
     last_mid: Optional[float] = None
     last_seq: int = 0
+    open_client_oids: list[str] = None  # type: ignore[assignment]
+    inventory: float = 0.0
 
 
 class SpreadQuoter:
@@ -23,7 +25,7 @@ class SpreadQuoter:
         self.outcome_yes_id = outcome_yes_id
         self.params = params
         self.engine = engine
-        self.state = QuoterState()
+        self.state = QuoterState(open_client_oids=[])
 
     def step(self, ob: OrderBook, now_ts_ms: Optional[int] = None, last_update_ts_ms: Optional[int] = None):
         now_ts_ms = now_ts_ms or int(time.time() * 1000)
@@ -51,11 +53,23 @@ class SpreadQuoter:
         )
         if plan is None:
             return None
+        # Assign client order ids per side and cancel previous
+        for it in plan.intents:
+            side_tag = "bid" if it.side == "buy" else "ask"
+            it.client_order_id = f"q:{self.market_id}:{ob.seq}:{side_tag}"
+        if self.state.open_client_oids:
+            self.engine.cancel_client_orders(self.state.open_client_oids)
+
         res = self.engine.execute_plan(plan)
+        self.state.open_client_oids = [i.client_order_id for i in plan.intents if i.client_order_id]
         # Update state with current levels regardless of fill
         self.state.last_bid = bb.price
         self.state.last_ask = ba.price
         self.state.last_mid = mid
         self.state.last_seq = ob.seq
+        for ack, intent in zip(res.acks, plan.intents):
+            if intent.side == "buy":
+                self.state.inventory += ack.filled_size
+            else:
+                self.state.inventory -= ack.filled_size
         return res
-
