@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import Optional
 
-from polybot.storage.db import connect_sqlite, enable_wal
+from polybot.storage.db import connect_sqlite, enable_wal, connect
 from polybot.storage import schema as schema_mod
 from polybot.ingestion.orderbook import OrderbookIngestor
 from polybot.observability.recording import read_jsonl
@@ -31,7 +31,7 @@ from polybot.observability.recording import write_jsonl, read_jsonl
 
 
 def init_db(db_url: str):
-    con = connect_sqlite(db_url)
+    con = connect(db_url)
     enable_wal(con)
     schema_mod.create_all(con)
     return con
@@ -180,7 +180,7 @@ async def cmd_quoter_run_ws_async(
 
 async def cmd_run_service_from_config_async(config_path: str) -> None:
     cfg = load_service_config(config_path)
-    sr = ServiceRunner(db_url=cfg.db_url, params=cfg.default_spread)
+    sr = ServiceRunner(db_url=cfg.db_url, params=cfg.default_spread, relayer_type=cfg.relayer_type)
     await sr.run_markets(cfg.markets)
 
 

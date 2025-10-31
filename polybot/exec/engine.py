@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import json
 import time
 from typing import List, Optional
+import uuid
+import inspect
 
 from polybot.exec.planning import ExecutionPlan
 from polybot.adapters.polymarket.relayer import OrderRequest, FakeRelayer, OrderAck
@@ -34,10 +36,20 @@ class ExecutionEngine:
             )
             for i in plan.intents
         ]
-        start_perf = time.perf_counter()
+        # Ensure plan_id for idempotency/audit
+        plan_id = plan.plan_id or uuid.uuid4().hex
         start_perf = time.perf_counter()
         with Timer("engine_execute_plan"):
-            acks = self.relayer.place_orders(reqs)
+            # Pass idempotency_prefix if relayer supports it
+            acks: List[OrderAck]
+            try:
+                sig = inspect.signature(self.relayer.place_orders)  # type: ignore[attr-defined]
+                if "idempotency_prefix" in sig.parameters:
+                    acks = self.relayer.place_orders(reqs, idempotency_prefix=plan_id)  # type: ignore[arg-type]
+                else:
+                    acks = self.relayer.place_orders(reqs)  # type: ignore[call-arg]
+            except (TypeError, ValueError, AttributeError):
+                acks = self.relayer.place_orders(reqs)  # type: ignore[call-arg]
         fully = all(a.remaining_size == 0.0 and a.accepted for a in acks)
         inc("orders_placed", len(reqs))
         inc("orders_filled", sum(1 for a in acks if a.remaining_size == 0.0 and a.accepted))
@@ -64,9 +76,6 @@ class ExecutionEngine:
             try:
                 ts_ms = int(time.time() * 1000)
                 duration_ms = int((time.perf_counter() - start_perf) * 1000)
-                import uuid
-
-                plan_id = uuid.uuid4().hex
                 intents_json = json.dumps([i.__dict__ for i in plan.intents])
                 acks_json = json.dumps([a.__dict__ for a in acks])
                 self.audit_db.execute(

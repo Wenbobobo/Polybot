@@ -119,3 +119,16 @@ class RelayerClient:
     def cancel_client_orders(self, client_order_ids: List[str]) -> List[CancelAck]:
         raw = self._client.cancel_orders(client_order_ids)
         return [CancelAck(client_order_id=str(a.get("client_order_id", "")), canceled=bool(a.get("canceled", False))) for a in raw]
+
+
+def build_relayer(kind: str, **kwargs):
+    kind = (kind or "fake").lower()
+    if kind == "fake":
+        fill_ratio = float(kwargs.get("fill_ratio", 0.0))
+        return FakeRelayer(fill_ratio=fill_ratio)
+    if kind == "real":
+        client = kwargs.get("client")
+        if client is None:
+            raise NotImplementedError("Real relayer requires an injected client instance (py-clob-client)")
+        return RelayerClient(client)
+    raise ValueError(f"Unknown relayer kind: {kind}")

@@ -20,3 +20,4 @@ class ExecutionPlan:
     intents: List[OrderIntent]
     expected_profit: float
     rationale: str
+    plan_id: str | None = None

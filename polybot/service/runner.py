@@ -9,8 +9,8 @@ from polybot.adapters.polymarket.ws import OrderbookWSClient
 from polybot.adapters.polymarket.ws_translator import translate_polymarket_message
 from polybot.adapters.polymarket.subscribe import build_subscribe_l2
 from polybot.exec.engine import ExecutionEngine
-from polybot.adapters.polymarket.relayer import FakeRelayer
-from polybot.storage.db import connect_sqlite, enable_wal
+from polybot.adapters.polymarket.relayer import FakeRelayer, build_relayer
+from polybot.storage.db import connect, enable_wal
 from polybot.storage import schema as schema_mod
 from polybot.strategy.spread import SpreadParams
 from polybot.strategy.spread_quoter import SpreadQuoter
@@ -41,15 +41,16 @@ async def _aiter_translated_ws(url: str, max_messages: Optional[int] = None, sub
 
 
 class ServiceRunner:
-    def __init__(self, db_url: str, params: Optional[SpreadParams] = None):
+    def __init__(self, db_url: str, params: Optional[SpreadParams] = None, relayer_type: str = "fake"):
         self.db_url = db_url
         self.params = params or SpreadParams()
-        self.con = connect_sqlite(db_url)
+        self.relayer_type = relayer_type
+        self.con = connect(db_url)
         enable_wal(self.con)
         schema_mod.create_all(self.con)
 
     async def run_markets(self, markets: List[MarketSpec]) -> None:
-        engine = ExecutionEngine(FakeRelayer(fill_ratio=0.0), audit_db=self.con)
+        engine = ExecutionEngine(build_relayer(self.relayer_type), audit_db=self.con)
         tasks: List[asyncio.Task] = []
         for ms in markets:
             sp = ms.spread_params or self.params
