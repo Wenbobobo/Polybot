@@ -1,5 +1,7 @@
 # Operations Runbook (Phase 1)
 
+Note: This runbook covers day-to-day operations and troubleshooting. For installation and first-time setup, see `docs/deployment.md`.
+
 This runbook covers common operational tasks for Polybot MVP in Phase 1.
 
 ## Health Checks

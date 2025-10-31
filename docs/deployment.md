@@ -70,6 +70,7 @@
 - 执行审计信息保存在 `exec_audit` 中。
 - 计划后续阶段引入指标和仪表板（Prometheus）。
  - 进程内指标：`uv run python -m polybot.cli metrics` 显示计数器（包括按市场标识的值）。
+ - Prometheus 暴露文本：`uv run python -m polybot.cli metrics-export` 可用于本地抓取或重定向至文件。
 
 ## 运行手册与操作提示
 - 数据摄取出现停滞：
@@ -84,6 +85,10 @@
 - 在测试中 WebSocket 协议和数据结构为通用格式；真实 Polymarket 订阅将在之后接入。
 - 中继器调用在测试中使用 FakeRelayer；第一阶段不会发送真实订单。
 - Telegram 机器人和外部新闻订阅将在数据/存储/交易基础完全验证后再引入。
+
+## 数据库（PostgreSQL 路线）
+- 配置中可将 `[db].url` 设置为 `postgresql://...`。当前版本会抛出清晰的 `NotImplementedError`（尚未接入驱动与迁移），用于在部署前进行配置验证。
+- 未来版本将添加 PostgreSQL/Timescale 支持与索引/分区策略（见 `docs/handoff.md` 和 `docs/roadmap.md`）。
 
 ## 附录：示例本地数据库 URL
 - SQLite 文件：`sqlite:///./polybot.db`

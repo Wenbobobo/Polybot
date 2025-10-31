@@ -17,6 +17,7 @@ Core Commands
 - Refresh Markets (Gamma): `uv run python -m polybot.cli refresh-markets https://gamma-api.polymarket.com --db-url sqlite:///./polybot.db`
 - Run Service: `uv run python -m polybot.cli run-service --config config/markets.example.toml`
 - Metrics: `uv run python -m polybot.cli metrics`
+- Prometheus Export: `uv run python -m polybot.cli metrics-export`
 - Health: `uv run python -m polybot.cli health --db-url sqlite:///./polybot.db --staleness-ms 30000`
 
 Docs

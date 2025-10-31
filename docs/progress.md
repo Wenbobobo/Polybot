@@ -28,3 +28,16 @@ This file tracks decisions and incremental progress.
 - Implemented service runner and config; mock WS, record/replay tooling.
 - Added per-market labelled metrics; status --verbose surfaces quote/order/engine timings.
 - Quoter tuned: rate limiting, per-side replace thresholds/intervals, cancel throttling.
+
+Open Items (as of 2025-10-31)
+- Wire real Polymarket relayer (py-clob-client), add idempotency keys, map rich OrderAck; document allowances and dry-run mode.
+- Align WS translator and schemas with official Polymarket L2 payloads (channels, market filters, checksums); add fixtures and stricter validation.
+- Prometheus exporter and dashboards; add metrics reset utilities for tests.
+- Storage migration path to PostgreSQL/Timescale; add indices for frequent queries and bulk upsert helpers.
+- Risk and circuit breaking: exposure caps across outcomes/markets, health/error/latency guards, order reject burst handling.
+- Ops polish: reconnect/backoff, task watchdogs, graceful shutdowns; service runner health summaries.
+
+Next Steps
+- Prioritize relayer integration and WS schema alignment (S2/S1 hardening), then metrics exporter and Postgres migration.
+- Expand SpreadParams tunables and batch cancel/replace logic; ensure tick-size-aware min_change thresholds.
+- Extend CLI status --verbose with resync ratios and cancel rate-limit events; add quick "top offenders" view.
