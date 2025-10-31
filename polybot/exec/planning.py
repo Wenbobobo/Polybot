@@ -12,6 +12,7 @@ class OrderIntent:
     price: float
     size: float
     tif: str = "IOC"  # IOC, FOK, GTC
+    client_order_id: str | None = None
 
 
 @dataclass
@@ -19,4 +20,3 @@ class ExecutionPlan:
     intents: List[OrderIntent]
     expected_profit: float
     rationale: str
-

@@ -93,6 +93,30 @@ DDL = {
         CREATE INDEX IF NOT EXISTS idx_fills_order ON fills(order_id);
         """
     ),
+    "market_status": (
+        """
+        CREATE TABLE IF NOT EXISTS market_status (
+            market_id TEXT PRIMARY KEY,
+            last_seq INTEGER NOT NULL DEFAULT 0,
+            last_update_ts_ms INTEGER NOT NULL DEFAULT 0,
+            snapshots INTEGER NOT NULL DEFAULT 0,
+            deltas INTEGER NOT NULL DEFAULT 0
+        );
+        """
+    ),
+    "exec_audit": (
+        """
+        CREATE TABLE IF NOT EXISTS exec_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts_ms INTEGER NOT NULL,
+            plan_rationale TEXT,
+            expected_profit REAL,
+            intents_json TEXT,
+            acks_json TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_exec_audit_ts ON exec_audit(ts_ms);
+        """
+    ),
 }
 
 

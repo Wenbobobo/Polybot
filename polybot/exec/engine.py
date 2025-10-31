@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+import json
+import time
+from typing import List, Optional
 
 from polybot.exec.planning import ExecutionPlan
 from polybot.adapters.polymarket.relayer import OrderRequest, FakeRelayer, OrderAck
+from polybot.storage.orders import persist_orders_and_fills
 
 
 @dataclass
@@ -14,8 +17,9 @@ class ExecutionResult:
 
 
 class ExecutionEngine:
-    def __init__(self, relayer: FakeRelayer):
+    def __init__(self, relayer: FakeRelayer, audit_db=None):
         self.relayer = relayer
+        self.audit_db = audit_db
 
     def execute_plan(self, plan: ExecutionPlan) -> ExecutionResult:
         reqs = [
@@ -31,5 +35,24 @@ class ExecutionEngine:
         ]
         acks = self.relayer.place_orders(reqs)
         fully = all(a.remaining_size == 0.0 and a.accepted for a in acks)
-        return ExecutionResult(acks=acks, fully_filled=fully)
-
+        result = ExecutionResult(acks=acks, fully_filled=fully)
+        # persist orders/fills if DB configured
+        if self.audit_db is not None:
+            try:
+                persist_orders_and_fills(self.audit_db, plan.intents, acks)
+            except Exception:
+                pass
+        # optional audit persistence
+        if self.audit_db is not None:
+            try:
+                ts_ms = int(time.time() * 1000)
+                intents_json = json.dumps([i.__dict__ for i in plan.intents])
+                acks_json = json.dumps([a.__dict__ for a in acks])
+                self.audit_db.execute(
+                    "INSERT INTO exec_audit (ts_ms, plan_rationale, expected_profit, intents_json, acks_json) VALUES (?,?,?,?,?)",
+                    (ts_ms, plan.rationale, plan.expected_profit, intents_json, acks_json),
+                )
+                self.audit_db.commit()
+            except Exception:
+                pass
+        return result

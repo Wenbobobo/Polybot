@@ -14,6 +14,24 @@ class SpreadParams:
     size: float = 10.0
     edge: float = 0.02  # distance from mid
     staleness_threshold_ms: int = 2000
+    max_mid_jump: float = 0.03  # if mid moves more than this vs last, pull quotes
+
+
+def should_refresh_quotes(
+    last_bid: float,
+    last_ask: float,
+    best_bid: float,
+    best_ask: float,
+    tick_size: float,
+    max_mid_jump: float,
+) -> bool:
+    # Refresh if best levels moved beyond one tick or mid jump too large
+    eps = 1e-9
+    if abs(best_bid - last_bid) >= tick_size - eps or abs(best_ask - last_ask) >= tick_size - eps:
+        return True
+    last_mid = (last_bid + last_ask) / 2.0
+    mid = (best_bid + best_ask) / 2.0
+    return abs(mid - last_mid) > max_mid_jump - eps
 
 
 def plan_spread_quotes(
@@ -24,6 +42,7 @@ def plan_spread_quotes(
     now_ts_ms: int,
     last_update_ts_ms: int,
     params: SpreadParams = SpreadParams(),
+    last_mid: float | None = None,
 ) -> Optional[ExecutionPlan]:
     # Staleness guard
     if now_ts_ms - last_update_ts_ms > params.staleness_threshold_ms:
@@ -42,6 +61,9 @@ def plan_spread_quotes(
 
     # Compute mid and target quotes
     mid = (best_bid.price + best_ask.price) / 2.0
+    # Volatility/pull guard
+    if last_mid is not None and abs(mid - last_mid) > params.max_mid_jump:
+        return None
     raw_bid = max(best_bid.price + params.tick_size, mid - params.edge)
     raw_ask = min(best_ask.price - params.tick_size, mid + params.edge)
 
