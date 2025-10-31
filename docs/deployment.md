@@ -90,3 +90,20 @@ This guide explains how to set up, run, and operate the Polybot MVP components o
 ### Simulate Spread Quoting from a Stream
 - Use the QuoterRunner (programmatic) to consume an event stream and generate/cancel quotes using the FakeRelayer and an in-memory DB. This is intended for offline validation and smoke testing of quote lifecycle before connecting to live relayers.
 - For a production-like run, wire the WS client to produce orderbook messages and pass them to `QuoterRunner` with a real relayer once credentials/allowances are in place.
+### Refresh Markets Catalog (Gamma)
+- One-shot refresh into DB:
+  - `uv run python -m polybot.cli refresh-markets https://gamma-api.polymarket.com --db-url sqlite:///./polybot.db`
+- In code, use `polybot.ingestion.markets.refresh_markets` with `GammaHttpClient` to schedule periodic refreshes.
+
+### Run Spread Quoter Against WS Stream
+- Simulate spread quoting (FakeRelayer) from a Polymarket-like WS stream:
+  - `uv run python -m polybot.cli quoter-run-ws ws://127.0.0.1:9000 mkt-1 yes --db-url sqlite:///./polybot.db --max-messages 100`
+- Notes:
+  - The quoter adjusts sizes based on inventory and enforces min requote interval and exposure cap.
+  - Replace with real relayer in later phases; ensure allowances and auth.
+
+### Run Multi-Market Service (Simulation)
+- Programmatically use the ServiceRunner to orchestrate multiple markets concurrently:
+  - Construct MarketSpec entries with `market_id`, `outcome_yes_id`, `ws_url`, `max_messages`, `subscribe=true`.
+  - Initialize `ServiceRunner(db_url)` and call `await run_markets(specs)`.
+- This simulates concurrent orderbook consumption and quoting across markets with the FakeRelayer.

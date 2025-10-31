@@ -19,6 +19,11 @@ Data Ingestion
 - WS client scaffold uses generic JSON messages for tests; Polymarket subscription semantics to be added when wiring live.
 - Snapshot→delta with monotonic seq; gap detection and partial resync.
 - Backpressure and batching; per-market freshness (age_ms) and health.
+ - Message validation (pydantic), checksum checks, metrics counters for invalid/applied and resync reasons.
+
+Markets Catalog
+- Periodic refresh via Gamma HTTP client; normalize and upsert into DB (markets/outcomes).
+- Scheduler hook to keep catalog current for strategy filters.
 
 Database (dev→prod)
 - Dev: SQLite (WAL). Prod: PostgreSQL (Timescale/pgvector optional later). RedisBloom/DuckDB are optional tooling.
@@ -30,6 +35,7 @@ Execution & Risk
 - IOC/FOK/limit; partial-fill handling and cancel/replace.
 - Health gates and circuit breakers; staleness thresholds; min_profit_usdc default 0.02.
 - Neg-risk/Other safeguards; rule hash watch.
+ - Exposure guard: compute inventory from fills; cap per outcome; drop intents that breach cap.
 
 Testing (TDD)
 - Unit: math, book assembly, staleness, schema utilities, config loader.
