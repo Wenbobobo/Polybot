@@ -25,6 +25,12 @@ class ExecutionEngine:
         self.audit_db = audit_db
 
     def execute_plan(self, plan: ExecutionPlan) -> ExecutionResult:
+        # Ensure plan_id for idempotency/audit
+        plan_id = plan.plan_id or uuid.uuid4().hex
+        # Populate client_order_id if missing
+        for idx, it in enumerate(plan.intents):
+            if not it.client_order_id:
+                it.client_order_id = f"p-{plan_id[:8]}-{idx}-{it.side[0]}-{it.outcome_id}"
         reqs = [
             OrderRequest(
                 market_id=i.market_id,
@@ -33,11 +39,10 @@ class ExecutionEngine:
                 price=i.price,
                 size=i.size,
                 tif=i.tif,  # type: ignore[arg-type]
+                client_order_id=i.client_order_id,
             )
             for i in plan.intents
         ]
-        # Ensure plan_id for idempotency/audit
-        plan_id = plan.plan_id or uuid.uuid4().hex
         start_perf = time.perf_counter()
         with Timer("engine_execute_plan"):
             # Pass idempotency_prefix if relayer supports it

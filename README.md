@@ -16,8 +16,11 @@ Core Commands
 - Quoter Replay: `uv run python -m polybot.cli quoter-run-replay recordings/sample.jsonl mkt-1 yes --db-url sqlite:///./polybot.db`
 - Refresh Markets (Gamma): `uv run python -m polybot.cli refresh-markets https://gamma-api.polymarket.com --db-url sqlite:///./polybot.db`
 - Run Service: `uv run python -m polybot.cli run-service --config config/markets.example.toml`
+  - Use `[relayer].type = "fake"|"real"` in the TOML; `real` requires an injected client in code.
 - Metrics: `uv run python -m polybot.cli metrics`
 - Prometheus Export: `uv run python -m polybot.cli metrics-export`
+- Metrics HTTP Server: `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 0`
+- DB Migrations: `uv run python -m polybot.cli migrate --db-url postgresql://user:pass@host:5432/db --print-sql`
 - Health: `uv run python -m polybot.cli health --db-url sqlite:///./polybot.db --staleness-ms 30000`
 
 Docs

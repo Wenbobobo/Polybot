@@ -10,13 +10,15 @@ Scope & Status
 
 What’s Next (Priority)
 1) Wire real Polymarket relayer (py-clob-client)
-   - Adapter provided: `RelayerClient` (in code) accepts an injected client with `place_orders`/`cancel_orders`. Wire to engine behind config flag; add EOA signer when moving to live.
+   - Adapter provided: `RelayerClient` (in code) accepts an injected client with `place_orders`/`cancel_orders`.
+   - Config wiring: Service config reads `[relayer].type = "fake|real"`; runner builds relayer via `build_relayer`. Default remains `fake` for safety.
+   - Engine passes `plan_id` as `idempotency_prefix` when available. `PyClobRelayer` adapter exists to wrap py-clob-client and map fields; add EOA signer when moving to live.
    - Implement order placement/cancel with idempotency keys and map Acks into our OrderAck
    - Allowances: add CLI to approve USDC and outcome tokens on Polygon; carefully isolate keys via config/secrets files
    - Add dry-run mode and per-env config (test/live)
 
 2) WS protocol alignment
-   - Extended: schemas and translator accept `channel`, `market`, `ts_ms`, and wrapped `data`. Next: align to official checksum/filters and add more fixtures.
+   - Extended: schemas and translator accept `channel`, `market`, `ts_ms`, and wrapped `data`. Translator ignores non-`l2` channels. Next: finalize checksum semantics and per-market filters with official fixtures.
    - Support per-market subscribe and reconnection strategies; backpressure handling
    - Expand validator schemas to match official payloads; add fixtures
 
@@ -27,6 +29,7 @@ What’s Next (Priority)
 
 4) Storage & Infra
    - PostgreSQL migration (optionally Timescale); add indices/partitions per observed access patterns
+   - Baseline SQL is in `migrations/postgres/001_init.sql`; CLI exposes `migrate --print-sql`.
    - Metrics exporter (Prometheus) and dashboards
    - Secrets management and environment profiles
 

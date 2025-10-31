@@ -70,7 +70,8 @@
 - 执行审计信息保存在 `exec_audit` 中。
 - 计划后续阶段引入指标和仪表板（Prometheus）。
  - 进程内指标：`uv run python -m polybot.cli metrics` 显示计数器（包括按市场标识的值）。
- - Prometheus 暴露文本：`uv run python -m polybot.cli metrics-export` 可用于本地抓取或重定向至文件。
+- Prometheus 暴露文本：`uv run python -m polybot.cli metrics-export` 可用于本地抓取或重定向至文件。
+ - 轻量 HTTP 暴露：`uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 0` 在本地提供 `/metrics`。
 
 ## 运行手册与操作提示
 - 数据摄取出现停滞：
@@ -114,3 +115,8 @@
   - 构造包含 `market_id`, `outcome_yes_id`, `ws_url`, `max_messages`, `subscribe=true` 的 MarketSpec 条目。
   - 初始化 `ServiceRunner(db_url)` 并调用 `await run_markets(specs)`。
 - 此操作使用 FakeRelayer 模拟跨市场的并发订单簿消费与报价生成。
+
+### 选择 Relayer 类型（为上线做准备）
+- 在 `config/markets.example.toml` 中设置：
+  - `[relayer] type = "fake"`（默认，安全模拟）
+  - 未来接入真实中继器时设置为 `"real"` 并在代码中注入实际客户端（py-clob-client）。当前版本会在未注入客户端时抛出 `NotImplementedError`，避免误发单。
