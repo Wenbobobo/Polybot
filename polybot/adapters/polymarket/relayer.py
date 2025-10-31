@@ -71,3 +71,51 @@ class FakeRelayer:
                 self._open.pop(cid, None)
             acks.append(CancelAck(client_order_id=cid, canceled=canceled))
         return acks
+
+
+class RelayerClient:
+    """Adapter for a real Polymarket CLOB client (e.g., py-clob-client-like).
+
+    This class depends on an injected client with methods:
+      - place_orders(list[dict]) -> list[dict]
+      - cancel_orders(list[str]) -> list[dict]
+
+    No network calls are made in tests; pass a stub client implementing these methods.
+    """
+
+    def __init__(self, client: object):
+        self._client = client
+
+    def place_orders(self, reqs: List[OrderRequest], idempotency_prefix: Optional[str] = None) -> List[OrderAck]:
+        payload = []
+        for r in reqs:
+            p: Dict[str, object] = {
+                "market_id": r.market_id,
+                "outcome_id": r.outcome_id,
+                "side": r.side,
+                "price": r.price,
+                "size": r.size,
+                "tif": r.tif,
+                "client_order_id": r.client_order_id,
+            }
+            if idempotency_prefix and r.client_order_id:
+                p["idempotency_key"] = f"{idempotency_prefix}:{r.client_order_id}"
+            payload.append(p)
+        raw = self._client.place_orders(payload)
+        acks: List[OrderAck] = []
+        for a in raw:
+            acks.append(
+                OrderAck(
+                    order_id=str(a.get("order_id", "")),
+                    accepted=bool(a.get("accepted", False)),
+                    filled_size=float(a.get("filled_size", 0.0)),
+                    remaining_size=float(a.get("remaining_size", 0.0)),
+                    status=str(a.get("status", "accepted")),
+                    client_order_id=a.get("client_order_id"),
+                )
+            )
+        return acks
+
+    def cancel_client_orders(self, client_order_ids: List[str]) -> List[CancelAck]:
+        raw = self._client.cancel_orders(client_order_ids)
+        return [CancelAck(client_order_id=str(a.get("client_order_id", "")), canceled=bool(a.get("canceled", False))) for a in raw]

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from .commands import cmd_replay, cmd_ingest_ws
-from .commands import cmd_status, cmd_refresh_markets, cmd_quoter_run_ws_async, cmd_health, cmd_metrics, cmd_record_ws_async, cmd_quoter_run_replay_async, cmd_mock_ws_async
+from .commands import cmd_status, cmd_refresh_markets, cmd_quoter_run_ws_async, cmd_health, cmd_metrics, cmd_record_ws_async, cmd_quoter_run_replay_async, cmd_mock_ws_async, cmd_metrics_export
 from polybot.cli.commands import cmd_run_service_from_config_async
 
 
@@ -32,6 +32,7 @@ def main() -> None:
     p_health.add_argument("--staleness-ms", type=int, default=30000)
 
     sub.add_parser("metrics", help="Print in-process metrics counters")
+    sub.add_parser("metrics-export", help="Print Prometheus text exposition of metrics")
 
     p_rec = sub.add_parser("record-ws", help="Record WS messages to JSONL (optionally translate Polymarket -> internal)")
     p_rec.add_argument("url")
@@ -76,6 +77,8 @@ def main() -> None:
         cmd_health(db_url=args.db_url, staleness_threshold_ms=args.staleness_ms)
     elif args.cmd == "metrics":
         cmd_metrics()
+    elif args.cmd == "metrics-export":
+        cmd_metrics_export()
     elif args.cmd == "record-ws":
         import asyncio
         asyncio.run(cmd_record_ws_async(args.url, args.outfile, max_messages=args.max_messages, subscribe=args.subscribe, translate=not args.no_translate))

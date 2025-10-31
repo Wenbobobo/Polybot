@@ -21,6 +21,9 @@ class SnapshotMsg(BaseModel):
     seq: conint(ge=0)
     bids: List[List[float]] = Field(default_factory=list)
     asks: List[List[float]] = Field(default_factory=list)
+    channel: Optional[str] = None
+    market: Optional[str] = None
+    ts_ms: Optional[conint(ge=0)] = None
 
 
 class DeltaMsg(BaseModel):
@@ -29,3 +32,6 @@ class DeltaMsg(BaseModel):
     bids: Optional[List[List[float]]] = None
     asks: Optional[List[List[float]]] = None
     checksum: Optional[str] = None
+    channel: Optional[str] = None
+    market: Optional[str] = None
+    ts_ms: Optional[conint(ge=0)] = None

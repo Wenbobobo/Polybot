@@ -24,6 +24,7 @@ from polybot.exec.engine import ExecutionEngine
 from polybot.adapters.polymarket.relayer import FakeRelayer
 from polybot.observability.health import check_staleness
 from polybot.observability.metrics import list_counters, list_counters_labelled, get_counter_labelled
+from polybot.observability.prometheus import export_text as prometheus_export_text
 from polybot.service.config import load_service_config
 from polybot.service.runner import ServiceRunner
 from polybot.observability.recording import write_jsonl, read_jsonl
@@ -115,6 +116,13 @@ def cmd_metrics() -> str:
     out = "\n".join(parts)
     print(out)
     return out
+
+
+def cmd_metrics_export() -> str:
+    """Return Prometheus text exposition format for in-process metrics."""
+    text = prometheus_export_text()
+    print(text, end="")
+    return text
 
 
 def cmd_refresh_markets(base_url: str, db_url: str = ":memory:") -> int:

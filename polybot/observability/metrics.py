@@ -48,3 +48,9 @@ class Timer:
         dur_ms = int((time.perf_counter() - self.start) * 1000)
         inc(f"{self.name}_ms_sum", dur_ms)
         inc(f"{self.name}_count", 1)
+
+
+def reset() -> None:
+    """Reset all in-process metrics (for tests)."""
+    _COUNTERS.clear()
+    _COUNTERS_LABELLED.clear()
