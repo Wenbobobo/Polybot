@@ -1,0 +1,2 @@
+# Polymarket-specific adapters
+
