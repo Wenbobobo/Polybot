@@ -15,6 +15,9 @@ class ServiceConfig:
     markets: List[MarketSpec]
     default_spread: SpreadParams
     relayer_type: str = "fake"
+    relayer_base_url: str = "https://clob.polymarket.com"
+    relayer_dry_run: bool = True
+    relayer_private_key: str = ""
 
 
 def _parse_spread(obj: dict | None) -> SpreadParams:
@@ -36,7 +39,11 @@ def load_service_config(path: str | Path) -> ServiceConfig:
     data = tomllib.loads(Path(p).read_text(encoding="utf-8")) if False else tomllib.load(open(p, "rb"))
     svc = data.get("service", {})
     db_url = svc.get("db_url", ":memory:")
-    relayer_type = (data.get("relayer", {}) or {}).get("type", "fake")
+    rel = (data.get("relayer", {}) or {})
+    relayer_type = rel.get("type", "fake")
+    relayer_base_url = rel.get("base_url", "https://clob.polymarket.com")
+    relayer_dry_run = bool(rel.get("dry_run", True))
+    relayer_private_key = rel.get("private_key", "")
     default_spread = _parse_spread(svc.get("spread"))
     markets: List[MarketSpec] = []
     for m in data.get("market", []) or []:
@@ -51,4 +58,12 @@ def load_service_config(path: str | Path) -> ServiceConfig:
                 spread_params=sp,
             )
         )
-    return ServiceConfig(db_url=db_url, markets=markets, default_spread=default_spread, relayer_type=relayer_type)
+    return ServiceConfig(
+        db_url=db_url,
+        markets=markets,
+        default_spread=default_spread,
+        relayer_type=relayer_type,
+        relayer_base_url=str(relayer_base_url),
+        relayer_dry_run=relayer_dry_run,
+        relayer_private_key=str(relayer_private_key),
+    )

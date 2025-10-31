@@ -129,6 +129,15 @@ def build_relayer(kind: str, **kwargs):
     if kind == "real":
         client = kwargs.get("client")
         if client is None:
-            raise NotImplementedError("Real relayer requires an injected client instance (py-clob-client)")
+            # attempt to build via py-clob helper if available
+            try:
+                from .real_client import make_pyclob_client  # type: ignore
+                client = make_pyclob_client(
+                    base_url=str(kwargs.get("base_url", "https://clob.polymarket.com")),
+                    private_key=str(kwargs.get("private_key", "")),
+                    dry_run=bool(kwargs.get("dry_run", True)),
+                )
+            except Exception as e:  # noqa: BLE001
+                raise NotImplementedError("Real relayer requires an injected client instance or install py-clob-client") from e
         return RelayerClient(client)
     raise ValueError(f"Unknown relayer kind: {kind}")

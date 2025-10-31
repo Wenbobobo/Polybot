@@ -20,8 +20,10 @@ from polybot.adapters.polymarket.ws_translator import translate_polymarket_messa
 from polybot.strategy.spread import SpreadParams
 from polybot.strategy.spread_quoter import SpreadQuoter
 from polybot.strategy.quoter_runner import QuoterRunner
+from polybot.strategy.dutch_runner import DutchRunner, DutchSpec
 from polybot.exec.engine import ExecutionEngine
 from polybot.adapters.polymarket.relayer import FakeRelayer
+from polybot.adapters.polymarket.relayer import build_relayer
 from polybot.observability.health import check_staleness
 from polybot.observability.metrics import list_counters, list_counters_labelled, get_counter_labelled
 from polybot.observability.prometheus import export_text as prometheus_export_text
@@ -80,6 +82,35 @@ def cmd_status(db_url: str = ":memory:", verbose: bool = False) -> str:
             lines.append(f"  quotes: placed={qp} canceled={qc} skipped={qs} skipped_same={qss} rate_limited={qrl}")
             lines.append(f"  orders: placed={op} filled={of} exec_avg_ms={avg_ms:.1f} exec_count={ec}")
             lines.append(f"  resyncs: total={total_resyncs} ratio={resync_ratio:.3f}")
+    out = "\n".join(lines)
+    print(out)
+    return out
+
+
+def cmd_status_top(db_url: str = ":memory:", limit: int = 5) -> str:
+    """Show top markets by resync ratio and cancel rate-limit events.
+
+    Uses counters accumulated in-process; intended for quick diagnostics.
+    """
+    con = connect_sqlite(db_url)
+    rows = con.execute("SELECT market_id, last_seq, last_update_ts_ms, snapshots, deltas FROM market_status ORDER BY market_id").fetchall()
+    stats = []
+    for r in rows:
+        mkt = r[0]
+        applied = get_counter_labelled("ingestion_msg_applied", {"market": mkt})
+        gap = get_counter_labelled("ingestion_resync_gap", {"market": mkt})
+        csum = get_counter_labelled("ingestion_resync_checksum", {"market": mkt})
+        firstd = get_counter_labelled("ingestion_resync_first_delta", {"market": mkt})
+        total_resyncs = gap + csum + firstd
+        resync_ratio = (total_resyncs / max(1, applied)) if applied else 0
+        cancel_rl = get_counter_labelled("quotes_cancel_rate_limited", {"market": mkt})
+        stats.append((mkt, resync_ratio, cancel_rl))
+    # Sort by resync ratio desc then cancel rate-limit desc
+    stats.sort(key=lambda x: (-x[1], -x[2], x[0]))
+    top = stats[: max(1, limit)]
+    lines = ["market_id resync_ratio cancel_rate_limited"]
+    for mkt, ratio, crl in top:
+        lines.append(f"{mkt} {ratio:.3f} {crl}")
     out = "\n".join(lines)
     print(out)
     return out
@@ -185,7 +216,12 @@ async def cmd_quoter_run_ws_async(
 
 async def cmd_run_service_from_config_async(config_path: str) -> None:
     cfg = load_service_config(config_path)
-    sr = ServiceRunner(db_url=cfg.db_url, params=cfg.default_spread, relayer_type=cfg.relayer_type)
+    rel_kwargs = {
+        "base_url": cfg.relayer_base_url,
+        "dry_run": cfg.relayer_dry_run,
+        "private_key": cfg.relayer_private_key,
+    }
+    sr = ServiceRunner(db_url=cfg.db_url, params=cfg.default_spread, relayer_type=cfg.relayer_type, relayer_kwargs=rel_kwargs)
     await sr.run_markets(cfg.markets)
 
 
@@ -222,6 +258,91 @@ async def cmd_quoter_run_replay_async(file: str, market_id: str, outcome_yes_id:
 
     async def _aiter():
         for e in read_jsonl(file):
+            yield e
+
+    now_ms = lambda: int(time.time() * 1000)
+    await runner.run(_aiter(), now_ms)
+
+
+async def cmd_dutch_run_replay_async(
+    file: str,
+    market_id: str,
+    outcomes_csv: str | None,
+    db_url: str = ":memory:",
+    min_profit_usdc: float = 0.02,
+    default_size: float = 1.0,
+    safety_margin_usdc: float = 0.0,
+    fee_bps: float = 0.0,
+    slippage_ticks: int = 0,
+    allow_other: bool = False,
+    verbose: bool = False,
+) -> None:
+    setup_logging()
+    con = init_db(db_url)
+    engine = ExecutionEngine(FakeRelayer(fill_ratio=0.0), audit_db=con)
+    if outcomes_csv:
+        outcomes = outcomes_csv.split(",")
+    else:
+        rows = con.execute("SELECT outcome_id FROM outcomes WHERE market_id=? ORDER BY outcome_id", (market_id,)).fetchall()
+        outcomes = [r[0] for r in rows]
+    if not outcomes:
+        print(f"no outcomes found for market {market_id}; nothing to do")
+        return
+    spec = DutchSpec(market_id, outcomes)
+    runner = DutchRunner(
+        spec,
+        engine,
+        min_profit_usdc=min_profit_usdc,
+        default_size=default_size,
+        meta_db=con,
+        safety_margin_usdc=safety_margin_usdc,
+        fee_bps=fee_bps,
+        slippage_ticks=slippage_ticks,
+    )
+
+    # Preload events to both run detection and compute final margin if verbose
+    events = list(read_jsonl(file))
+
+    # Compute diagnostic margins if requested
+    if verbose:
+        from polybot.adapters.polymarket.orderbook import OrderbookAssembler
+        from polybot.strategy.dutch_book import MarketQuotes, OutcomeQuote, plan_dutch_book_with_safety as _plan
+        from polybot.core.pricing import sum_prices
+        assemblers = {oid: OrderbookAssembler(market_id) for oid in outcomes}
+        for e in events:
+            oid = e.get("outcome_id")
+            if oid in assemblers:
+                if e.get("type") == "snapshot":
+                    assemblers[oid].apply_snapshot(e)
+                elif e.get("type") == "delta":
+                    assemblers[oid].apply_delta(e)
+        outs: list[OutcomeQuote] = []
+        for oid, asm in assemblers.items():
+            ob = asm.apply_delta({"seq": asm._seq})
+            ba = ob.best_ask()
+            if not ba:
+                continue
+            # Pull metadata from DB when available
+            row = con.execute("SELECT name, tick_size, min_size FROM outcomes WHERE outcome_id=?", (oid,)).fetchone()
+            name, tick, mn = (row or (None, 0.01, 1.0))
+            outs.append(OutcomeQuote(outcome_id=oid, best_ask=ba.price, tick_size=float(tick), min_size=float(mn), name=name))
+        if outs:
+            quotes = MarketQuotes(market_id=market_id, outcomes=outs)
+            total_ask = sum_prices([o.best_ask for o in outs])
+            margin = 1.0 - total_ask
+            eff_plan = _plan(
+                quotes,
+                min_profit_usdc=min_profit_usdc,
+                safety_margin_usdc=safety_margin_usdc,
+                fee_bps=fee_bps,
+                slippage_ticks=slippage_ticks,
+                allow_other=allow_other,
+                default_size=default_size,
+            )
+            print(f"diagnostic: total_ask={total_ask:.6f} margin={margin:.6f} plan={'yes' if eff_plan else 'no'}")
+
+    async def _aiter():
+        for e in events:
             yield e
 
     now_ms = lambda: int(time.time() * 1000)
@@ -312,4 +433,29 @@ def cmd_migrate(db_url: str, print_sql: bool = False) -> str:
         print(out)
     else:
         print(str(out))
+    return out
+
+
+def cmd_relayer_dry_run(market_id: str, outcome_id: str, side: str, price: float, size: float, base_url: str, private_key: str, db_url: str = ":memory:") -> str:
+    """Place a single IOC order via 'real' relayer in dry-run mode.
+
+    This uses build_relayer('real', base_url=..., private_key=..., dry_run=True).
+    If the real client is unavailable, prints a helpful error.
+    """
+    setup_logging()
+    try:
+        rel = build_relayer("real", base_url=base_url, private_key=private_key, dry_run=True)
+    except Exception as e:
+        msg = f"relayer unavailable: {e}"
+        print(msg)
+        return msg
+    from polybot.exec.planning import ExecutionPlan, OrderIntent
+    con = init_db(db_url)
+    from polybot.exec.engine import ExecutionEngine
+
+    engine = ExecutionEngine(rel, audit_db=con)
+    plan = ExecutionPlan(intents=[OrderIntent(market_id=market_id, outcome_id=outcome_id, side=side, price=price, size=size, tif="IOC")], expected_profit=0.0, rationale="dry_run")
+    res = engine.execute_plan(plan)
+    out = f"placed={len(res.acks)} accepted={sum(1 for a in res.acks if a.accepted)}"
+    print(out)
     return out

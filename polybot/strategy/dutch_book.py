@@ -22,6 +22,18 @@ class MarketQuotes:
     outcomes: List[OutcomeQuote]
 
 
+def _is_other(name: str | None) -> bool:
+    if not name:
+        return False
+    n = name.strip().lower()
+    if "other" in n or "others" in n:
+        return True
+    # simple CN variant
+    if "其他" in n:
+        return True
+    return False
+
+
 def detect_dutch_book(
     quotes: MarketQuotes,
     min_profit_usdc: float = 0.02,
@@ -35,7 +47,7 @@ def detect_dutch_book(
     """
     prices: List[float] = []
     for o in quotes.outcomes:
-        if (o.name or "").strip().lower() == "other" and not allow_other:
+        if _is_other(o.name) and not allow_other:
             return False, 0.0
         p = o.best_ask
         if not is_valid_price(p):
@@ -71,3 +83,25 @@ def plan_dutch_book(
         )
     return ExecutionPlan(intents=intents, expected_profit=margin * default_size, rationale="dutch_book_sum_lt_one")
 
+
+def plan_dutch_book_with_safety(
+    quotes: MarketQuotes,
+    min_profit_usdc: float = 0.02,
+    safety_margin_usdc: float = 0.0,
+    fee_bps: float = 0.0,
+    slippage_ticks: int = 0,
+    allow_other: bool = False,
+    default_size: float = 1.0,
+) -> ExecutionPlan | None:
+    eligible, margin = detect_dutch_book(quotes, min_profit_usdc, allow_other)
+    if not eligible:
+        return None
+    # Apply safety margin + fees + slippage estimate
+    total_ask = sum_prices([o.best_ask for o in quotes.outcomes])
+    total_tick = sum_prices([o.tick_size for o in quotes.outcomes])
+    fee_cost = (max(0.0, fee_bps) / 10000.0) * total_ask
+    slippage_cost = max(0, slippage_ticks) * total_tick
+    eff_margin = margin - safety_margin_usdc - fee_cost - slippage_cost
+    if eff_margin <= min_profit_usdc:
+        return None
+    return plan_dutch_book(quotes, min_profit_usdc=min_profit_usdc, allow_other=allow_other, default_size=default_size)

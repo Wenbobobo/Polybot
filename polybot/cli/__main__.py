@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from .commands import cmd_replay, cmd_ingest_ws
-from .commands import cmd_status, cmd_refresh_markets, cmd_quoter_run_ws_async, cmd_health, cmd_metrics, cmd_record_ws_async, cmd_quoter_run_replay_async, cmd_mock_ws_async, cmd_metrics_export, cmd_metrics_serve, cmd_migrate
+from .commands import cmd_status, cmd_refresh_markets, cmd_quoter_run_ws_async, cmd_health, cmd_metrics, cmd_record_ws_async, cmd_quoter_run_replay_async, cmd_mock_ws_async, cmd_metrics_export, cmd_metrics_serve, cmd_migrate, cmd_dutch_run_replay_async, cmd_relayer_dry_run, cmd_status_top
 from polybot.cli.commands import cmd_run_service_from_config_async
 
 
@@ -26,6 +26,9 @@ def main() -> None:
     p_status = sub.add_parser("status", help="Show market ingestion status")
     p_status.add_argument("--db-url", default=":memory:")
     p_status.add_argument("--verbose", action="store_true")
+    p_top = sub.add_parser("status-top", help="Show top markets by resync ratio and cancel rate-limit")
+    p_top.add_argument("--db-url", default=":memory:")
+    p_top.add_argument("--limit", type=int, default=5)
 
     p_health = sub.add_parser("health", help="Health check: staleness")
     p_health.add_argument("--db-url", default=":memory:")
@@ -73,6 +76,29 @@ def main() -> None:
     p_service = sub.add_parser("run-service", help="Run multi-market service from TOML config")
     p_service.add_argument("--config", required=True)
 
+    p_dutch = sub.add_parser("dutch-run-replay", help="Run dutch-book detector from multi-outcome JSONL events")
+    p_dutch.add_argument("file")
+    p_dutch.add_argument("market_id")
+    p_dutch.add_argument("--outcomes", help="Comma-separated outcome IDs; if omitted, read from DB")
+    p_dutch.add_argument("--db-url", default=":memory:")
+    p_dutch.add_argument("--min-profit-usdc", type=float, default=0.02)
+    p_dutch.add_argument("--default-size", type=float, default=1.0)
+    p_dutch.add_argument("--safety-margin-usdc", type=float, default=0.0)
+    p_dutch.add_argument("--fee-bps", type=float, default=0.0)
+    p_dutch.add_argument("--slippage-ticks", type=int, default=0)
+    p_dutch.add_argument("--allow-other", action="store_true")
+    p_dutch.add_argument("--verbose", action="store_true")
+
+    p_rdry = sub.add_parser("relayer-dry-run", help="Dry-run a single order via configured 'real' relayer")
+    p_rdry.add_argument("market_id")
+    p_rdry.add_argument("outcome_id")
+    p_rdry.add_argument("side", choices=["buy", "sell"])
+    p_rdry.add_argument("price", type=float)
+    p_rdry.add_argument("size", type=float)
+    p_rdry.add_argument("--base-url", default="https://clob.polymarket.com")
+    p_rdry.add_argument("--private-key", default="")
+    p_rdry.add_argument("--db-url", default=":memory:")
+
     args = parser.parse_args()
     if args.cmd == "replay":
         cmd_replay(args.file, args.market_id, db_url=args.db_url)
@@ -88,6 +114,8 @@ def main() -> None:
         cmd_metrics_export()
     elif args.cmd == "metrics-serve":
         cmd_metrics_serve(host=args.host, port=args.port)
+    elif args.cmd == "status-top":
+        cmd_status_top(db_url=args.db_url, limit=args.limit)
     elif args.cmd == "migrate":
         cmd_migrate(db_url=args.db_url, print_sql=args.print_sql)
     elif args.cmd == "record-ws":
@@ -107,6 +135,34 @@ def main() -> None:
     elif args.cmd == "run-service":
         import asyncio
         asyncio.run(cmd_run_service_from_config_async(args.config))
+    elif args.cmd == "dutch-run-replay":
+        import asyncio
+        asyncio.run(
+            cmd_dutch_run_replay_async(
+                args.file,
+                args.market_id,
+                outcomes_csv=args.outcomes,
+                db_url=args.db_url,
+                min_profit_usdc=args.min_profit_usdc,
+                default_size=args.default_size,
+                safety_margin_usdc=args.safety_margin_usdc,
+                fee_bps=args.fee_bps,
+                slippage_ticks=args.slippage_ticks,
+                allow_other=args.allow_other,
+                verbose=args.verbose,
+            )
+        )
+    elif args.cmd == "relayer-dry-run":
+        cmd_relayer_dry_run(
+            market_id=args.market_id,
+            outcome_id=args.outcome_id,
+            side=args.side,
+            price=args.price,
+            size=args.size,
+            base_url=args.base_url,
+            private_key=args.private_key,
+            db_url=args.db_url,
+        )
 
 
 if __name__ == "__main__":

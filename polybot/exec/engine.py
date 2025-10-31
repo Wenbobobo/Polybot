@@ -65,6 +65,9 @@ class ExecutionEngine:
                 except Exception:
                     attempt += 1
                     if attempt > self.max_retries:
+                        # count error per market(s)
+                        for mid in set(i.market_id for i in plan.intents):
+                            inc_labelled("engine_errors", {"market": mid}, 1)
                         raise
                     if self._sleeper:
                         try:
@@ -89,6 +92,7 @@ class ExecutionEngine:
         for mid in seen_markets:
             inc_labelled("engine_execute_plan_ms_sum", {"market": mid}, dur_ms)
             inc_labelled("engine_execute_plan_count", {"market": mid}, 1)
+            inc_labelled("engine_place_ms_sum", {"market": mid}, dur_ms)
         result = ExecutionResult(acks=acks, fully_filled=fully)
         # persist orders/fills if DB configured
         if self.audit_db is not None:

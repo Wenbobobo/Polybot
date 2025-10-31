@@ -77,6 +77,7 @@ DDL = {
             updated_ts_ms INTEGER
         );
         CREATE INDEX IF NOT EXISTS idx_orders_market ON orders(market_id);
+        CREATE INDEX IF NOT EXISTS idx_orders_market_status ON orders(market_id, status);
         """
     ),
     "fills": (
