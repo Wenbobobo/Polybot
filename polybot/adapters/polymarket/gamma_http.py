@@ -12,10 +12,28 @@ class GammaHttpClient:
         self.client = client or httpx.Client(base_url=self.base_url, timeout=10.0)
 
     def list_markets(self) -> List[Dict[str, Any]]:
-        # Endpoint path to be aligned with Polymarket Gamma; using placeholder "/markets".
-        resp = self.client.get("/markets")
-        resp.raise_for_status()
-        data = resp.json()
-        # Normalize to internal format using GammaClient utility
-        return GammaClient.normalize_markets(data)
+        """Fetch markets with basic pagination support.
 
+        Accepts either a plain array payload or a paginated envelope:
+        {"data": [...], "next": "cursor"}
+        """
+        out: List[Dict[str, Any]] = []
+        cursor: Optional[str] = None
+        while True:
+            path = "/markets"
+            if cursor:
+                path += f"?cursor={cursor}"
+            resp = self.client.get(path)
+            resp.raise_for_status()
+            payload = resp.json()
+            if isinstance(payload, list):
+                out.extend(payload)
+                break
+            if isinstance(payload, dict):
+                out.extend(payload.get("data", []))
+                cursor = payload.get("next") or None
+                if not cursor:
+                    break
+            else:
+                break
+        return GammaClient.normalize_markets(out)

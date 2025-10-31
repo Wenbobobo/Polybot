@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import time
-from typing import List, Optional
+from typing import List, Optional, Callable
 import uuid
 import inspect
 
@@ -20,9 +20,12 @@ class ExecutionResult:
 
 
 class ExecutionEngine:
-    def __init__(self, relayer: FakeRelayer, audit_db=None):
+    def __init__(self, relayer: FakeRelayer, audit_db=None, max_retries: int = 0, retry_sleep_ms: int = 0, sleeper: Optional[Callable[[int], None]] = None):
         self.relayer = relayer
         self.audit_db = audit_db
+        self.max_retries = max(0, int(max_retries))
+        self.retry_sleep_ms = max(0, int(retry_sleep_ms))
+        self._sleeper = sleeper
 
     def execute_plan(self, plan: ExecutionPlan) -> ExecutionResult:
         # Ensure plan_id for idempotency/audit
@@ -47,14 +50,31 @@ class ExecutionEngine:
         with Timer("engine_execute_plan"):
             # Pass idempotency_prefix if relayer supports it
             acks: List[OrderAck]
-            try:
-                sig = inspect.signature(self.relayer.place_orders)  # type: ignore[attr-defined]
-                if "idempotency_prefix" in sig.parameters:
-                    acks = self.relayer.place_orders(reqs, idempotency_prefix=plan_id)  # type: ignore[arg-type]
-                else:
+            attempt = 0
+            while True:
+                try:
+                    sig = inspect.signature(self.relayer.place_orders)  # type: ignore[attr-defined]
+                    if "idempotency_prefix" in sig.parameters:
+                        acks = self.relayer.place_orders(reqs, idempotency_prefix=plan_id)  # type: ignore[arg-type]
+                    else:
+                        acks = self.relayer.place_orders(reqs)  # type: ignore[call-arg]
+                    break
+                except (TypeError, ValueError, AttributeError):
                     acks = self.relayer.place_orders(reqs)  # type: ignore[call-arg]
-            except (TypeError, ValueError, AttributeError):
-                acks = self.relayer.place_orders(reqs)  # type: ignore[call-arg]
+                    break
+                except Exception:
+                    attempt += 1
+                    if attempt > self.max_retries:
+                        raise
+                    if self._sleeper:
+                        try:
+                            self._sleeper(self.retry_sleep_ms)
+                        except Exception:
+                            pass
+                    else:
+                        import time as _t
+
+                        _t.sleep(self.retry_sleep_ms / 1000.0)
         fully = all(a.remaining_size == 0.0 and a.accepted for a in acks)
         inc("orders_placed", len(reqs))
         inc("orders_filled", sum(1 for a in acks if a.remaining_size == 0.0 and a.accepted))
