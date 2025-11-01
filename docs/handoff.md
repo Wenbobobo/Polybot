@@ -45,6 +45,12 @@ Relayer / Wallet & Secrets
   - 规则/市场风险过筛（避免 Other；核对 rule_hash）；
   - 合理的限速/重试参数，避免自我限流或风控触发。
 
+Assistance Needed (from operator)
+- Provide a dedicated wallet and private key (Polygon) in `config/secrets.local.toml` (never commit), and confirm `chain_id`.
+- Install `py_clob_client` in the runtime environment and confirm constructor options (chain, timeout) if they differ.
+- Confirm base URLs for CLOB and Gamma per environment (testnet/mainnet).
+- When ready for live: run `preflight --config ...` then a single `relayer-dry-run` before enabling service.
+
 File-level TODOs (for quick pickup)
 - adapters/polymarket/ws_translator.py: implement exact field mapping for official L2 payloads (channels, market filters) and checksum semantics; keep translate_polymarket_message backward-compatible.
 - adapters/polymarket/schemas.py: extend SnapshotMsg/DeltaMsg to official schema fields (channel, market, timestamps, nested arrays) and add stricter validation of nested arrays.

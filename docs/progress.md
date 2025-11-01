@@ -54,10 +54,12 @@ This file tracks decisions and incremental progress.
 - Postgres：迁移文件补充 `idx_orders_market_status` 索引以与 SQLite 索引对齐。
 - Config：`run-service` 会读取同目录 `secrets.local.toml` 并覆盖 `[relayer]` 字段（如 `private_key`、`dry_run`）。
 - CLI：新增授权占位命令 `relayer-approve-usdc` 与 `relayer-approve-outcome`（在未接入真实客户端时输出友好提示）。
- - WS：WebSocket 客户端加入重连与重订阅（`max_reconnects`/`backoff_ms`），新增单测覆盖。
- - PyClob 适配器：支持转发 `approve_usdc` 与 `approve_outcome` 至底层客户端（若提供）。
- - Postgres：新增 Timescale 可选迁移脚本 `migrations/postgres/010_timescale.sql` 与单测覆盖；增加带 stub psycopg 的 `--apply` 烟雾测试。
- - 订单簿：添加大快照用例以验证装配与最佳价提取在大数组下的稳健性。
+- WS：WebSocket 客户端加入重连与重订阅（`max_reconnects`/`backoff_ms`），新增单测覆盖。
+- PyClob 适配器：支持转发 `approve_usdc` 与 `approve_outcome` 至底层客户端（若提供）。
+- Postgres：新增 Timescale 可选迁移脚本 `migrations/postgres/010_timescale.sql` 与单测覆盖；增加带 stub psycopg 的 `--apply` 烟雾测试。
+- 订单簿：添加大快照用例以验证装配与最佳价提取在大数组下的稳健性。
+- Spread（S4）完善：引入 `min_quote_lifetime_ms`、从 DB 读取 `tick_size` 以驱动 `min_change_ticks`、保留按侧替换窗口与取消限流；`status --verbose` 增加 cancel_rate_limited。
+- Dutch（S3）已具备：多 outcome 汇总、规则哈希守护、费用/滑点/安全边际，稳定 plan_id 并计量 metrics（dutch_orders_placed / dutch_rulehash_changed）。
 
 Next (queued)
 - py-clob-client 封装与 dry-run 联调（EOA 签名、拒单/超时/部分成交映射、速率控制/重试），完成后提醒配置钱包切实盘。
@@ -77,3 +79,4 @@ Next Steps
 - Prioritize relayer integration and WS schema alignment (S2/S1 hardening), then metrics exporter and Postgres migration.
 - Expand SpreadParams tunables and batch cancel/replace logic; ensure tick-size-aware min_change thresholds.
 - Extend CLI status --verbose with resync ratios and cancel rate-limit events; add quick "top offenders" view.
+- S5 Conversions（预研完成）：新增 CTF 接口占位（merge/split）与简单的转换规划器（should_merge/should_split），含单测；暂不接入服务流，后续按真实客户端落地与费用模型细化。

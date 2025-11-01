@@ -37,3 +37,9 @@
 - Alerts, status, optional approvals
 - Config and permissions model；托管下单（类似 gmgnbot）
 - 初版：离线命令解析与引擎联动（不依赖网络），后续接入 Telegram SDK 与权限校验
+
+## Queued Next (post S1–S4)
+- Real relayer (py‑clob‑client) live wiring: signer, timeouts/backoff, allowance calls, richer acks.
+- WS: additional official checksum fixtures and extreme cases; persistent streams; ping/pong.
+- CTF (S5 prod): real client for merge/split with gas/fee models; risk gates; CLI and service integration.
+- Dashboards: Prometheus scraping and Grafana baseline.
