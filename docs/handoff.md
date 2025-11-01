@@ -45,6 +45,11 @@ Relayer / Wallet & Secrets
   - 规则/市场风险过筛（避免 Other；核对 rule_hash）；
   - 合理的限速/重试参数，避免自我限流或风控触发。
 
+Configuration Model (Consolidated)
+- Use a single service config TOML (e.g., `config/service.example.toml`) containing `[service]`, `[service.spread]`, `[relayer]`, and `[[market]]` sections.
+- Place a `secrets.local.toml` (gitignored) next to it to overlay `[relayer]` fields like `private_key` and `dry_run`.
+- `run-service --config <path>` and `preflight/smoke-live` all read the same service config and apply the secrets overlay automatically.
+
 Assistance Needed (from operator)
 - Provide a dedicated wallet and private key (Polygon) in `config/secrets.local.toml` (never commit), and confirm `chain_id`.
 - Install `py_clob_client` in the runtime environment and confirm constructor options (chain, timeout) if they differ.

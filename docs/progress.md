@@ -60,6 +60,7 @@ This file tracks decisions and incremental progress.
 - 订单簿：添加大快照用例以验证装配与最佳价提取在大数组下的稳健性。
 - Spread（S4）完善：引入 `min_quote_lifetime_ms`、从 DB 读取 `tick_size` 以驱动 `min_change_ticks`、保留按侧替换窗口与取消限流；`status --verbose` 增加 cancel_rate_limited。
 - Dutch（S3）已具备：多 outcome 汇总、规则哈希守护、费用/滑点/安全边际，稳定 plan_id 并计量 metrics（dutch_orders_placed / dutch_rulehash_changed）。
+- 配置整合：引入单文件 `config/service.example.toml` + 机密覆盖；移除 `config/markets.example.toml` 与 `config/live.example.toml`（不再在文档中引用）。保留 `config/default.toml` 仅用于单元测试，后续将迁移测试后再移除。
 
 Next (queued)
 - py-clob-client 封装与 dry-run 联调（EOA 签名、拒单/超时/部分成交映射、速率控制/重试），完成后提醒配置钱包切实盘。

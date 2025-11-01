@@ -40,9 +40,9 @@
   - 调整 staleness 阈值以模拟过期状态。
 
 ## 4) 服务编排（模拟）
-- 创建一个 TOML 配置文件（或使用 `config/markets.example.toml` 作为模板）。
+- 创建一个服务配置（或使用 `config/service.example.toml` 作为模板）。
 - 启动模拟 WS 服务：`uv run python -m polybot.cli mock-ws --port 9002`
-- 运行服务：`uv run python -m polybot.cli run-service --config config/markets.example.toml`
+- 运行服务：`uv run python -m polybot.cli run-service --config config/service.example.toml`
 - 验证订单与审计记录已写入；`status --verbose` 显示活动信息。
 
 ## 5) 记录与回放

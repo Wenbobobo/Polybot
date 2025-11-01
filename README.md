@@ -15,9 +15,9 @@ Core Commands
 - Record WS: `uv run python -m polybot.cli record-ws ws://127.0.0.1:9000 recordings/out.jsonl --max-messages 3 --subscribe`
 - Quoter Replay: `uv run python -m polybot.cli quoter-run-replay recordings/sample.jsonl mkt-1 yes --db-url sqlite:///./polybot.db`
 - Refresh Markets (Gamma): `uv run python -m polybot.cli refresh-markets https://gamma-api.polymarket.com --db-url sqlite:///./polybot.db`
-- Run Service: `uv run python -m polybot.cli run-service --config config/markets.example.toml`
+- Run Service: `uv run python -m polybot.cli run-service --config config/service.example.toml`
   - Use `[relayer].type = "fake"|"real"` in the TOML; `real` requires an injected client in code.
-  - Validate config before live: `uv run python -m polybot.cli preflight --config config/live.example.toml`
+  - Validate config before live: `uv run python -m polybot.cli preflight --config config/service.example.toml`
 - Metrics: `uv run python -m polybot.cli metrics`
 - Prometheus Export: `uv run python -m polybot.cli metrics-export`
 - Metrics HTTP Server: `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 0`
@@ -25,7 +25,8 @@ Core Commands
 - Dutch (replay): `uv run python -m polybot.cli dutch-run-replay recordings/multi.jsonl mkt-1 --db-url sqlite:///./polybot.db --safety-margin-usdc 0.01 --fee-bps 20 --slippage-ticks 1`
 - Relayer Dry Run: `uv run python -m polybot.cli relayer-dry-run mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x... --db-url sqlite:///./polybot.db`
   - (Prep) Allowances stubs: `relayer-approve-usdc` / `relayer-approve-outcome` print friendly messages until the real client is integrated.
-  - Preflight config checks before live: `uv run python -m polybot.cli preflight --config config/markets.example.toml`
+  - Preflight config checks before live: `uv run python -m polybot.cli preflight --config config/service.example.toml`
+  - Live smoke check (preflight + dry-run): `uv run python -m polybot.cli smoke-live --config config/service.example.toml mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x...`
 - Telegram (offline runner): `uv run python -m polybot.cli tgbot-run-local updates.jsonl mkt-1 yes --db-url sqlite:///./polybot.db`
 - Migrations: `uv run python -m polybot.cli migrate --db-url postgresql://user:pass@host:5432/db --print-sql` (or `--apply` if psycopg installed)
 - DB Migrations: `uv run python -m polybot.cli migrate --db-url postgresql://user:pass@host:5432/db --print-sql`
@@ -42,3 +43,47 @@ Docs
 Notes
 - Trading uses a FakeRelayer for safety in this phase. Wiring the real Polymarket relayer and CTF will follow.
 - Put secrets in a gitignored TOML (e.g., `config/secrets.local.toml`); see `config/secrets.local.toml.example`.
+ - For the service engine, you can control retries/backoff via `[service] engine_max_retries` and `engine_retry_sleep_ms` in your config.
+
+System Overview
+
+```mermaid
+flowchart LR
+  subgraph Data
+    WS[Polymarket WS L2] -->|snapshot/delta| Translator
+    Gamma[Gamma HTTP] --> Markets
+  end
+  Translator --> Ingestor
+  Ingestor --> DB[(SQLite/Postgres)]
+  Markets --> DB
+  DB --> Strategies
+  subgraph Strategies
+    Dutch[\nDutch Book\n]
+    Spread[\nSpread Capture\n]
+  end
+  Strategies --> Engine
+  Engine --> Relayer[Relayer (fake/real)]
+  Engine --> Audit[Exec Audit]
+  Audit --> DB
+  Engine --> Metrics[Metrics]
+  Ingestor --> Metrics
+```
+
+Component Architecture
+
+```mermaid
+flowchart TB
+  subgraph Ingestion
+    T[Translator] --> V[Validator]
+    V --> A[Assembler]
+    A --> S[Snapshot/Events]
+  end
+  S --> DB[(DB)]
+  DB --> DRunner[DutchRunner]
+  DB --> QRunner[QuoterRunner]
+  DRunner --> Eng[ExecutionEngine]
+  QRunner --> Eng
+  Eng --> Rel[Relayer]
+  Eng --> EA[Exec Audit]
+  EA --> DB
+```

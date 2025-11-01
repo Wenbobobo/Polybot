@@ -1,0 +1,50 @@
+# Base configuration for Polybot (Phase 1)
+
+[polymarket]
+gamma_base_url = "https://gamma-api.polymarket.com" # may be overridden in local config
+relayer_base_url = "https://clob.polymarket.com"     # placeholder; align with docs when implementing
+
+[relayer]
+# Choose the relayer adapter: "fake" (default, safe) or "real" (requires py-clob-client wiring and secrets)
+type = "fake"
+dry_run = true
+# Optional signer/network options for real relayer
+chain_id = 137
+timeout_s = 10.0
+
+[signing]
+# private_key should be provided in a local, gitignored file
+private_key = ""
+
+[db]
+# Development default: SQLite file with WAL
+url = "sqlite:///./polybot.db"
+wal = true
+
+[ingestion]
+max_markets = 100
+snapshot_interval_ms = 30000
+staleness_threshold_ms = 2000
+ws_buffer_size = 8192
+apply_batch_size = 256
+
+[strategy]
+dutch_book = true
+spread_capture = true
+conversions = false
+news = false
+
+[thresholds]
+min_profit_usdc = 0.02
+
+[limits]
+max_per_market_usdc = 100.0
+max_open_orders = 500
+
+[logging]
+level = "INFO"
+json = true
+
+[recordings]
+enable = true
+path = "./recordings"

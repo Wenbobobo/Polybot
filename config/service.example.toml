@@ -1,0 +1,49 @@
+# Polybot service configuration (single-file example)
+
+[service]
+db_url = "sqlite:///./polybot.db"
+# Optional engine retry controls
+engine_max_retries = 1
+engine_retry_sleep_ms = 25
+
+[service.spread]
+tick_size = 0.01
+size = 10.0
+edge = 0.02
+staleness_threshold_ms = 2000
+max_mid_jump = 0.03
+min_requote_interval_ms = 300
+min_quote_lifetime_ms = 0
+max_inventory = 100.0
+rebalance_ratio = 0.5
+
+[relayer]
+type = "fake"                 # set to "real" to use real relayer
+base_url = "https://clob.polymarket.com"
+dry_run = true                 # secrets overlay can override
+private_key = ""               # leave empty; override in secrets.local.toml
+chain_id = 137
+timeout_s = 10.0
+
+## Secrets overlay
+# Place a "secrets.local.toml" next to this file (gitignored) with:
+# [relayer]
+# private_key = "0xYOUR_PRIVATE_KEY"
+# dry_run = false
+
+[[market]]
+market_id = "mkt-1"
+outcome_yes_id = "yes"
+ws_url = "ws://127.0.0.1:9000"
+subscribe = true
+max_messages = 100
+
+# Optional per-market spread overrides:
+#[[market]]
+#market_id = "mkt-2"
+#outcome_yes_id = "yes"
+#ws_url = "ws://127.0.0.1:9001"
+#[market.spread]
+#edge = 0.03
+#size = 5.0
+

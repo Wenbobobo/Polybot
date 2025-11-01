@@ -57,7 +57,7 @@ log.txt
 error.txt
 *readme.md
 *.pptx
-config/
 *.sql
 *.sqlite
 *.sqlite3
+config/secrets.local.toml

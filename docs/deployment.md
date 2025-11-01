@@ -16,15 +16,12 @@
    - `uv run pytest -q`
 
 ## 配置
-- 所有配置都基于 TOML 文件。默认配置位于 `config/default.toml`。
-- 关键部分（第一阶段）：
-  - `[polymarket]`：Gamma（数据）和中继器（Relayer）的基础 URL（本阶段仅为占位）。
-  - `[db]`：SQLite URL（默认为 `sqlite:///./polybot.db`）和 WAL 设置。
-  - `[ingestion]`：缓冲区大小、过期阈值等。
-  - `[strategy]`：启用标志；DutchBook/Spread 默认为 true。
-  - `[thresholds]`：`min_profit_usdc = 0.02`，适用于早期模拟。
-- 如有需要，可创建本地配置覆盖文件：
-  - 将 `config/default.toml` 复制为 `config/local.toml`（该文件已被 git 忽略），并修改配置值。
+- 推荐使用“单文件配置 + 机密覆盖”模式：
+  - 主配置：`config/service.example.toml`（复制为 `service.toml` 并按需修改）
+    - 包含 `[service]`、`[service.spread]`、`[relayer]` 与 `[[market]]` 等节。
+  - 机密覆盖（gitignored）：与主配置同目录的 `secrets.local.toml`
+    - 覆盖 `[relayer]` 字段（例如 `private_key`、`dry_run=false`）。
+- 说明：历史上的 `config/default.toml` 保留用于底层加载器示例与测试，不用于服务运行。
 
 ## 本地运行
 ### 回放已记录事件
@@ -118,13 +115,15 @@
 - 此操作使用 FakeRelayer 模拟跨市场的并发订单簿消费与报价生成。
 
 ### 选择 Relayer 类型（为上线做准备）
-- 在 `config/markets.example.toml` 中设置：
+- 在 `config/service.toml`（或 service.example.toml）中设置：
   - `[relayer] type = "fake"`（默认，安全模拟）
-  - 未来接入真实中继器时设置为 `"real"` 并在代码中注入实际客户端（py-clob-client）。当前版本会在未注入客户端时抛出 `NotImplementedError`，避免误发单。
+  - 接入真实中继器时设置 `type = "real"`，并通过机密覆盖提供 `private_key`；默认 `dry_run=true` 先联调。
 ### 其他有用命令
 - 快速诊断：`uv run python -m polybot.cli status-top --db-url sqlite:///./polybot.db --limit 10`
 - 实盘干跑（需安装/配置 real relayer）：
   - `uv run python -m polybot.cli relayer-dry-run mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x... --db-url sqlite:///./polybot.db`
+- 一键烟雾测试（Preflight + Dry-run）：
+  - `uv run python -m polybot.cli smoke-live --config config/service.example.toml mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x...`
 - tgbot 离线命令回放：
   - 准备 JSONL（每行一个 update，如 `{ "message": { "text": "/help" } }`）
   - `uv run python -m polybot.cli tgbot-run-local updates.jsonl mkt-1 yes --db-url sqlite:///./polybot.db`
@@ -132,6 +131,11 @@
 ### 数据库迁移（PostgreSQL）
 - 查看 SQL：`uv run python -m polybot.cli migrate --db-url postgresql://user:pass@host:5432/db --print-sql`
 - 应用迁移（需安装 psycopg）：`uv run python -m polybot.cli migrate --db-url postgresql://user:pass@host:5432/db --apply`
+### 引擎重试控制（服务）
+- 在服务配置 `[service]` 下设置：
+  - `engine_max_retries = 2`
+  - `engine_retry_sleep_ms = 50`
+- 用于在下单失败时按计划进行重试与退避（结合内部指标 `engine_retries` 观察）。
 ### （预备）授权 CLI（占位）
 - 在接入真实客户端前，以下命令会输出友好的占位消息：
   - USDC 授权：`uv run python -m polybot.cli relayer-approve-usdc --base-url https://clob.polymarket.com --private-key 0x... --amount 100`
