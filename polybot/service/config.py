@@ -31,6 +31,7 @@ def _parse_spread(obj: dict | None) -> SpreadParams:
         staleness_threshold_ms=int(obj.get("staleness_threshold_ms", 2000)),
         max_mid_jump=float(obj.get("max_mid_jump", 0.03)),
         min_requote_interval_ms=int(obj.get("min_requote_interval_ms", 300)),
+        min_quote_lifetime_ms=int(obj.get("min_quote_lifetime_ms", 0)),
         max_inventory=float(obj.get("max_inventory", 100.0)),
         rebalance_ratio=float(obj.get("rebalance_ratio", 0.5)),
     )

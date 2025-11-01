@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
 
 from polybot.core.models import OrderBook
@@ -49,6 +49,9 @@ class SpreadQuoter:
         mid = (bb.price + ba.price) / 2.0
 
         # Decide whether to (re)quote
+        # Enforce global quote lifetime guard first (no side replacement before this time has passed)
+        if self.state.last_quote_ts_ms and (now_ts_ms - self.state.last_quote_ts_ms) < max(0, self.params.min_quote_lifetime_ms):
+            return None
         elapsed_ok = (
             (self.state.last_quote_ts_ms == 0)
             or ((now_ts_ms - self.state.last_quote_ts_ms) >= self.params.min_requote_interval_ms)
@@ -72,6 +75,20 @@ class SpreadQuoter:
                 inc_labelled("quotes_skipped", {"market": self.market_id})
                 return None
 
+        # Optionally override tick_size using market metadata from DB (if available)
+        effective_tick = self.params.tick_size
+        if getattr(self.engine, "audit_db", None) is not None:
+            try:
+                row = self.engine.audit_db.execute(
+                    "SELECT tick_size FROM outcomes WHERE outcome_id=? LIMIT 1",
+                    (self.outcome_yes_id,),
+                ).fetchone()
+                if row and float(row[0]) > 0:
+                    effective_tick = float(row[0])
+            except Exception:
+                pass
+        eff_params = replace(self.params, tick_size=effective_tick)
+
         plan = plan_spread_quotes(
             market_id=self.market_id,
             outcome_buy_id=self.outcome_yes_id,
@@ -79,7 +96,7 @@ class SpreadQuoter:
             ob=ob,
             now_ts_ms=now_ts_ms,
             last_update_ts_ms=last_update_ts_ms,
-            params=self.params,
+            params=eff_params,
             last_mid=self.state.last_mid,
         )
         if plan is None:
@@ -102,7 +119,7 @@ class SpreadQuoter:
 
         # Determine replacement need per side based on min_change_ticks threshold and size change
         replace_sides: list[str] = []
-        tick = self.params.tick_size
+        tick = effective_tick
         min_change = self.params.min_change_ticks * tick
         if "bid" in intended:
             p, s = intended["bid"]

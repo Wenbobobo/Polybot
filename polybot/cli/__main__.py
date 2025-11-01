@@ -136,6 +136,18 @@ def main() -> None:
     p_aout.add_argument("--token", required=True)
     p_aout.add_argument("--amount", type=float, required=True)
 
+    p_merge = sub.add_parser("conversions-merge", help="Simulate CTF merge (YES/NO -> USDC) using fake or real CTF")
+    p_merge.add_argument("market_id")
+    p_merge.add_argument("yes_id")
+    p_merge.add_argument("no_id")
+    p_merge.add_argument("size", type=float)
+
+    p_split = sub.add_parser("conversions-split", help="Simulate CTF split (USDC -> YES/NO) using fake or real CTF")
+    p_split.add_argument("market_id")
+    p_split.add_argument("yes_id")
+    p_split.add_argument("no_id")
+    p_split.add_argument("usdc_amount", type=float)
+
     p_tg = sub.add_parser("tgbot-run-local", help="Run offline Telegram-like updates from JSONL and print responses")
     p_tg.add_argument("updates_file")
     p_tg.add_argument("market_id")
@@ -163,6 +175,12 @@ def main() -> None:
     elif args.cmd == "preflight":
         from .commands import cmd_preflight
         cmd_preflight(args.config)
+    elif args.cmd == "conversions-merge":
+        from .commands import cmd_conversions_merge
+        cmd_conversions_merge(args.market_id, args.yes_id, args.no_id, args.size)
+    elif args.cmd == "conversions-split":
+        from .commands import cmd_conversions_split
+        cmd_conversions_split(args.market_id, args.yes_id, args.no_id, args.usdc_amount)
     elif args.cmd == "status-top":
         cmd_status_top(db_url=args.db_url, limit=args.limit)
     elif args.cmd == "migrate":

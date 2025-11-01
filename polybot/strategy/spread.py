@@ -16,6 +16,7 @@ class SpreadParams:
     staleness_threshold_ms: int = 2000
     max_mid_jump: float = 0.03  # if mid moves more than this vs last, pull quotes
     min_requote_interval_ms: int = 300  # do not requote more often than this
+    min_quote_lifetime_ms: int = 0  # do not replace any side before this lifetime
     max_inventory: float = 100.0
     rebalance_ratio: float = 0.5  # 0..1 strength of inventory rebalancing
     rate_capacity: float = 5.0

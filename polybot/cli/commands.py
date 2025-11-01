@@ -35,6 +35,7 @@ from polybot.storage.migrate import migrate as migrate_db
 from polybot.tgbot.agent import BotAgent, BotContext
 from polybot.tgbot.runner import TelegramUpdateRunner
 from polybot.storage.db import parse_db_url
+from polybot.adapters.polymarket.ctf import build_ctf, MergeRequest, SplitRequest
 
 
 def init_db(db_url: str):
@@ -75,15 +76,19 @@ def cmd_status(db_url: str = ":memory:", verbose: bool = False) -> str:
             qs = get_counter_labelled("quotes_skipped", {"market": mkt})
             qss = get_counter_labelled("quotes_skipped_same", {"market": mkt})
             qrl = get_counter_labelled("quotes_rate_limited", {"market": mkt})
+            qcrl = get_counter_labelled("quotes_cancel_rate_limited", {"market": mkt})
             op = get_counter_labelled("orders_placed", {"market": mkt})
             of = get_counter_labelled("orders_filled", {"market": mkt})
+            dplaced = get_counter_labelled("dutch_orders_placed", {"market": mkt})
+            drh = get_counter_labelled("dutch_rulehash_changed", {"market": mkt})
             ems = get_counter_labelled("engine_execute_plan_ms_sum", {"market": mkt})
             ec = get_counter_labelled("engine_execute_plan_count", {"market": mkt})
             avg_ms = (ems / ec) if ec else 0
             total_resyncs = gap + csum + firstd
             resync_ratio = (total_resyncs / max(1, applied)) if applied else 0
-            lines.append(f"  quotes: placed={qp} canceled={qc} skipped={qs} skipped_same={qss} rate_limited={qrl}")
+            lines.append(f"  quotes: placed={qp} canceled={qc} skipped={qs} skipped_same={qss} rate_limited={qrl} cancel_rate_limited={qcrl}")
             lines.append(f"  orders: placed={op} filled={of} exec_avg_ms={avg_ms:.1f} exec_count={ec}")
+            lines.append(f"  dutch: placed={dplaced} rulehash_changed={drh}")
             lines.append(f"  resyncs: total={total_resyncs} ratio={resync_ratio:.3f}")
     out = "\n".join(lines)
     print(out)
@@ -223,6 +228,22 @@ def cmd_preflight(config_path: str) -> str:
         print(out)
         return out
     out = "OK: preflight passed"
+    print(out)
+    return out
+
+
+def cmd_conversions_merge(market_id: str, yes_id: str, no_id: str, size: float) -> str:
+    ctf = build_ctf("fake")
+    ack = ctf.merge(MergeRequest(market_id=market_id, outcome_yes_id=yes_id, outcome_no_id=no_id, size=size))
+    out = f"merge accepted={ack.accepted} tx_id={ack.tx_id} reason={ack.reason or ''}"
+    print(out)
+    return out
+
+
+def cmd_conversions_split(market_id: str, yes_id: str, no_id: str, usdc_amount: float) -> str:
+    ctf = build_ctf("fake")
+    ack = ctf.split(SplitRequest(market_id=market_id, outcome_yes_id=yes_id, outcome_no_id=no_id, usdc_amount=usdc_amount))
+    out = f"split accepted={ack.accepted} tx_id={ack.tx_id} reason={ack.reason or ''}"
     print(out)
     return out
 
