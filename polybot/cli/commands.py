@@ -117,13 +117,14 @@ def cmd_status_top(db_url: str = ":memory:", limit: int = 5) -> str:
         resync_ratio = (total_resyncs / max(1, applied)) if applied else 0
         cancel_rl = get_counter_labelled("quotes_cancel_rate_limited", {"market": mkt})
         rejects = get_counter_labelled("relayer_acks_rejected", {"market": mkt})
-        stats.append((mkt, resync_ratio, cancel_rl, rejects))
-    # Sort: resync ratio desc, then rejects desc, then cancel rate-limit desc
-    stats.sort(key=lambda x: (-x[1], -x[3], -x[2], x[0]))
+        place_errs = get_counter_labelled("relayer_place_errors", {"market": mkt})
+        stats.append((mkt, resync_ratio, cancel_rl, rejects, place_errs))
+    # Sort: resync ratio desc, then rejects desc, then place_errs desc, then cancel rate-limit desc
+    stats.sort(key=lambda x: (-x[1], -x[3], -x[4], -x[2], x[0]))
     top = stats[: max(1, limit)]
-    lines = ["market_id resync_ratio rejects cancel_rate_limited"]
-    for mkt, ratio, crl, rej in top:
-        lines.append(f"{mkt} {ratio:.3f} {rej} {crl}")
+    lines = ["market_id resync_ratio rejects place_errors cancel_rate_limited"]
+    for mkt, ratio, crl, rej, perr in top:
+        lines.append(f"{mkt} {ratio:.3f} {rej} {perr} {crl}")
     out = "\n".join(lines)
     print(out)
     return out
@@ -324,6 +325,8 @@ async def cmd_run_service_from_config_async(config_path: str) -> None:
         "private_key": cfg.relayer_private_key,
         "chain_id": cfg.relayer_chain_id,
         "timeout_s": cfg.relayer_timeout_s,
+        "max_retries": cfg.relayer_max_retries,
+        "retry_sleep_ms": cfg.relayer_retry_sleep_ms,
     }
     sr = ServiceRunner(
         db_url=cfg.db_url,
@@ -607,6 +610,7 @@ def cmd_relayer_approve_usdc(base_url: str, private_key: str, amount: float, ret
             if hasattr(rel, "approve_usdc"):
                 tx = rel.approve_usdc(amount)  # type: ignore[attr-defined]
                 msg = f"approve_usdc submitted: {tx}"
+                inc_labelled("relayer_allowance_success", {"kind": "usdc"}, 1)
             else:
                 msg = "not implemented: relayer client missing approve_usdc()"
             print(msg)
@@ -636,6 +640,7 @@ def cmd_relayer_approve_outcome(base_url: str, private_key: str, token_address: 
             if hasattr(rel, "approve_outcome"):
                 tx = rel.approve_outcome(token_address, amount)  # type: ignore[attr-defined]
                 msg = f"approve_outcome submitted: {tx}"
+                inc_labelled("relayer_allowance_success", {"kind": "outcome"}, 1)
             else:
                 msg = "not implemented: relayer client missing approve_outcome()"
             print(msg)

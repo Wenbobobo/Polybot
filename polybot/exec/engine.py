@@ -142,7 +142,14 @@ class ExecutionEngine:
         # call relayer cancel if available
         if hasattr(self.relayer, "cancel_client_orders"):
             try:
+                import time as _t
+                from polybot.observability.metrics import inc
+
+                _start = _t.perf_counter()
                 self.relayer.cancel_client_orders(client_order_ids)
+                dur_ms = int((_t.perf_counter() - _start) * 1000)
+                inc("relayer_cancel_count", len(client_order_ids))
+                inc("relayer_cancel_ms_sum", dur_ms)
             except Exception:
                 pass
         # update DB statuses

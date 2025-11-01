@@ -7,6 +7,13 @@ Quick Start
 - `uv sync`
 - `uv run pytest -q` (all green)
 
+Config Guide
+- Single service file: `config/service.example.toml` (copy to `config/service.toml` and edit)
+- Secrets overlay (gitignored): `config/secrets.local.toml` next to your service file
+- Loader behavior: the service loader reads your service file and overlays any `[relayer]` fields found in `secrets.local.toml`
+- Minimal secrets overlay example:
+  - `[relayer] private_key = "0x..."`, `dry_run = false`, `chain_id = 137`
+
 Core Commands
 - Status: `uv run python -m polybot.cli status --db-url sqlite:///./polybot.db` (add `--verbose` for quotes + timings)
 - Mock WS: `uv run python -m polybot.cli mock-ws --port 9000`
@@ -16,11 +23,18 @@ Core Commands
 - Quoter Replay: `uv run python -m polybot.cli quoter-run-replay recordings/sample.jsonl mkt-1 yes --db-url sqlite:///./polybot.db`
 - Refresh Markets (Gamma): `uv run python -m polybot.cli refresh-markets https://gamma-api.polymarket.com --db-url sqlite:///./polybot.db`
 - Run Service: `uv run python -m polybot.cli run-service --config config/service.example.toml`
-  - Use `[relayer].type = "fake"|"real"` in the TOML; `real` requires an injected client in code.
+  - Use `[relayer].type = "fake"|"real"` in the TOML; `real` requires py-clob-client and a private key via secrets overlay.
+  - Retry controls: `[service] relayer_max_retries`, `relayer_retry_sleep_ms`; engine-level: `engine_max_retries`, `engine_retry_sleep_ms`.
   - Validate config before live: `uv run python -m polybot.cli preflight --config config/service.example.toml`
 - Metrics: `uv run python -m polybot.cli metrics`
 - Prometheus Export: `uv run python -m polybot.cli metrics-export`
 - Metrics HTTP Server: `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 0`
+- Grafana Dashboard: import `observability/grafana-dashboard.json` and point it at your Prometheus datasource.
+
+Grafana Quickstart
+- Run the metrics HTTP server locally: `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 8000`
+- Point Prometheus at `http://127.0.0.1:8000/metrics` (scrape job in your prometheus.yml)
+- Import `observability/grafana-dashboard.json` into Grafana and select your Prometheus datasource
 - Status Top (diagnostics): `uv run python -m polybot.cli status-top --db-url sqlite:///./polybot.db --limit 10`
 - Dutch (replay): `uv run python -m polybot.cli dutch-run-replay recordings/multi.jsonl mkt-1 --db-url sqlite:///./polybot.db --safety-margin-usdc 0.01 --fee-bps 20 --slippage-ticks 1`
 - Relayer Dry Run: `uv run python -m polybot.cli relayer-dry-run mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x... --db-url sqlite:///./polybot.db`

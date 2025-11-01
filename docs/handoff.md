@@ -70,7 +70,6 @@ File-level TODOs (for quick pickup)
 - storage/orders.py: add bulk upsert helpers for batched acks and DB indices for frequent queries (market_id, status).
 - observability/metrics.py: add reset utilities for tests and Prometheus exporter module; consider histograms for engine timings.
 - cli/commands.py: extend status --verbose to include per-market resync ratios and cancel rate-limit events; add a "top offenders" quick view.
-- config/default.toml: relayer/gamma URLs are placeholders; add config/secrets.local.toml examples for keys (never commit secrets).
 
 Dev Practices
 - TDD-first; add fixtures and fakes for network-dependent code

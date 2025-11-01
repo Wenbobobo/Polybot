@@ -137,7 +137,16 @@ class RelayerClient:
         return acks
 
     def cancel_client_orders(self, client_order_ids: List[str]) -> List[CancelAck]:
-        raw = self._client.cancel_orders(client_order_ids)
+        try:
+            raw = self._client.cancel_orders(client_order_ids)
+        except Exception:
+            try:
+                from polybot.observability.metrics import inc
+
+                inc("relayer_cancel_errors_total", 1)
+            except Exception:
+                pass
+            raise
         out: List[CancelAck] = []
         for a in raw:
             cid = a.get("client_order_id") or a.get("clientOrderId") or ""
@@ -150,11 +159,83 @@ class RelayerClient:
         return out
 
 
+class RetryRelayer:
+    """Wrapper that adds retry/backoff around place/cancel operations.
+
+    Retries on exceptions up to max_retries with optional sleep between attempts.
+    Increments relayer_retries_total on each retry attempt.
+    """
+
+    def __init__(self, inner, max_retries: int = 0, retry_sleep_ms: int = 0, sleeper=None):
+        self._inner = inner
+        self._max_retries = max(0, int(max_retries))
+        self._retry_sleep_ms = max(0, int(retry_sleep_ms))
+        self._sleeper = sleeper
+
+    def place_orders(self, reqs: List[OrderRequest], idempotency_prefix: Optional[str] = None) -> List[OrderAck]:
+        attempt = 0
+        while True:
+            try:
+                return self._inner.place_orders(reqs, idempotency_prefix=idempotency_prefix)
+            except Exception:
+                attempt += 1
+                try:
+                    from polybot.observability.metrics import inc
+
+                    inc("relayer_retries_total", 1)
+                except Exception:
+                    pass
+                if attempt > self._max_retries:
+                    raise
+                if self._sleeper:
+                    try:
+                        self._sleeper(self._retry_sleep_ms)
+                    except Exception:
+                        pass
+                else:
+                    import time as _t
+
+                    _t.sleep(self._retry_sleep_ms / 1000.0)
+
+    def cancel_client_orders(self, client_order_ids: List[str]) -> List[CancelAck]:
+        attempt = 0
+        while True:
+            try:
+                if hasattr(self._inner, "cancel_client_orders"):
+                    return self._inner.cancel_client_orders(client_order_ids)
+                return []
+            except Exception:
+                attempt += 1
+                try:
+                    from polybot.observability.metrics import inc
+
+                    inc("relayer_retries_total", 1)
+                except Exception:
+                    pass
+                if attempt > self._max_retries:
+                    raise
+                if self._sleeper:
+                    try:
+                        self._sleeper(self._retry_sleep_ms)
+                    except Exception:
+                        pass
+                else:
+                    import time as _t
+
+                    _t.sleep(self._retry_sleep_ms / 1000.0)
+
+
 def build_relayer(kind: str, **kwargs):
     kind = (kind or "fake").lower()
     if kind == "fake":
         fill_ratio = float(kwargs.get("fill_ratio", 0.0))
-        return FakeRelayer(fill_ratio=fill_ratio)
+        rel = FakeRelayer(fill_ratio=fill_ratio)
+        # optional wrapper
+        mr = int(kwargs.get("max_retries", 0))
+        rs = int(kwargs.get("retry_sleep_ms", 0))
+        if mr > 0:
+            return RetryRelayer(rel, max_retries=mr, retry_sleep_ms=rs)
+        return rel
     if kind == "real":
         client = kwargs.get("client")
         if client is None:
@@ -175,8 +256,15 @@ def build_relayer(kind: str, **kwargs):
         # mapping and idempotency keys match the official client.
         try:
             from .pyclob_adapter import PyClobRelayer  # type: ignore
-            return PyClobRelayer(client)
+
+            rel = PyClobRelayer(client)
         except Exception:
             # Fallback to generic mapping if adapter import fails
-            return RelayerClient(client)
+            rel = RelayerClient(client)
+        # Optional retry wrapper
+        mr = int(kwargs.get("max_retries", 0))
+        rs = int(kwargs.get("retry_sleep_ms", 0))
+        if mr > 0:
+            return RetryRelayer(rel, max_retries=mr, retry_sleep_ms=rs)
+        return rel
     raise ValueError(f"Unknown relayer kind: {kind}")

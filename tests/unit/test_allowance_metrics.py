@@ -18,3 +18,16 @@ def test_allowance_cli_increments_metrics_on_retry(monkeypatch):
     assert after_e >= before_e + 2
     assert out.startswith("relayer unavailable:")
 
+
+def test_allowance_cli_success_increments_success(monkeypatch):
+    class OkAdapter:
+        def approve_usdc(self, amount: float):
+            return {"tx": "0x1"}
+
+    monkeypatch.setattr(cmds, "build_relayer", lambda kind, **kw: OkAdapter())
+    from polybot.observability.metrics import get_counter_labelled
+
+    before = get_counter_labelled("relayer_allowance_success", {"kind": "usdc"})
+    cmds.cmd_relayer_approve_usdc(base_url="u", private_key="k", amount=1.0, retries=0)
+    after = get_counter_labelled("relayer_allowance_success", {"kind": "usdc"})
+    assert after == before + 1

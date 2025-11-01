@@ -22,6 +22,8 @@ class ServiceConfig:
     relayer_timeout_s: float = 10.0
     engine_max_retries: int = 0
     engine_retry_sleep_ms: int = 0
+    relayer_max_retries: int = 0
+    relayer_retry_sleep_ms: int = 0
 
 
 def _parse_spread(obj: dict | None) -> SpreadParams:
@@ -67,6 +69,8 @@ def load_service_config(path: str | Path) -> ServiceConfig:
     eng = svc
     engine_max_retries = int(eng.get("engine_max_retries", 0))
     engine_retry_sleep_ms = int(eng.get("engine_retry_sleep_ms", 0))
+    relayer_max_retries = int(svc.get("relayer_max_retries", 0))
+    relayer_retry_sleep_ms = int(svc.get("relayer_retry_sleep_ms", 0))
     default_spread = _parse_spread(svc.get("spread"))
     markets: List[MarketSpec] = []
     for m in data.get("market", []) or []:
@@ -93,4 +97,6 @@ def load_service_config(path: str | Path) -> ServiceConfig:
         relayer_timeout_s=relayer_timeout_s,
         engine_max_retries=engine_max_retries,
         engine_retry_sleep_ms=engine_retry_sleep_ms,
+        relayer_max_retries=relayer_max_retries,
+        relayer_retry_sleep_ms=relayer_retry_sleep_ms,
     )
