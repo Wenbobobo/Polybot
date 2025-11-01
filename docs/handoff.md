@@ -3,19 +3,16 @@
 Scope & Status
 - Phase 1 MVP (Polymarket-only) implemented with:
   - High-performance ingestion (WS + snapshot/resync), event storage, and recording/replay
-  - Strategies: Dutch Book (detector/planner), Spread Capture (planner + quoter loop)
-  - Execution engine with FakeRelayer; orders/fills/audits persisted
-  - Observability: JSON logs, in-process metrics (labelled), status/health CLIs
-  - Service runner for multi-market simulation; config supports default and per-market spread params
+  - Strategies: Dutch Book (detector/planner + DutchRunner), Spread Capture (planner + quoter loop)
+  - Execution engine with FakeRelayer; orders/fills/audits persisted; idempotency (plan_id + client_oid)
+  - Observability: JSON logs, in-process metrics (labelled), status/health/status-top CLIs; Prometheus exporter + HTTP /metrics
+  - Service runner for multi-market simulation; config supports default/per-market spread params；relayer config（type/base_url/dry_run/private_key）
 
 What’s Next (Priority)
 1) Wire real Polymarket relayer (py-clob-client)
-   - Adapter provided: `RelayerClient` (in code) accepts an injected client with `place_orders`/`cancel_orders`.
-   - Config wiring: Service config reads `[relayer].type = "fake|real"`; runner builds relayer via `build_relayer`. Default remains `fake` for safety.
-   - Engine passes `plan_id` as `idempotency_prefix` when available. `PyClobRelayer` adapter exists to wrap py-clob-client and map fields; add EOA signer when moving to live.
-   - Implement order placement/cancel with idempotency keys and map Acks into our OrderAck
-   - Allowances: add CLI to approve USDC and outcome tokens on Polygon; carefully isolate keys via config/secrets files
-   - Add dry-run mode and per-env config (test/live)
+   - DONE (Phase 1 wiring): `build_relayer("real")` now wraps injected or constructed py-clob client with `PyClobRelayer` (field mapping + idempotency). Falls back to generic adapter if unavailable.
+   - NEXT: add EOA signer and allowances workflow before going live; provide CLI helpers and secrets file template.
+   - Config: `[relayer]` in TOML stays default `fake` and `dry_run=true` for safety.
 
 2) WS protocol alignment
    - Extended: schemas and translator accept `channel`, `market`, `ts_ms`, and wrapped `data`. Translator ignores non-`l2` channels. Next: finalize checksum semantics and per-market filters with official fixtures.
@@ -29,9 +26,24 @@ What’s Next (Priority)
 
 4) Storage & Infra
    - PostgreSQL migration (optionally Timescale); add indices/partitions per observed access patterns
-   - Baseline SQL is in `migrations/postgres/001_init.sql`; CLI exposes `migrate --print-sql`.
+   - Baseline SQL is in `migrations/postgres/001_init.sql`; CLI exposes `migrate --print-sql` 与（安装 psycopg 时）`migrate --apply`。
    - Metrics exporter (Prometheus) and dashboards
+   - Finer engine timings added (per-market): `engine_place_call_ms_sum/_count` alongside existing `engine_execute_plan_*` and `engine_place_ms_sum`.
    - Secrets management and environment profiles
+
+S3 (Dutch Book) Notes
+- 条件：sum(asks) < 1 - min_profit_usdc；可叠加 safety_margin_usdc + fee_bps + slippage_ticks。
+- Runner：从 DB 读取 outcomes（tick/min/name），聚合 per-outcome 订单簿，生成稳定 plan_id；rule_hash 变更守护（跳过并计数）。
+- 风控：执行前库存上限校验；Engine 幂等（plan_id + client_oid）；metrics 含 dutch_orders_placed 与 dutch_rulehash_changed。
+- CLI：`dutch-run-replay`（支持 --allow-other/--verbose/自动 outcomes）；`status-top`（重同步/限流诊断）。
+
+Relayer / Wallet & Secrets
+- 不要提交私钥；将 `private_key` 放于 gitignored 的本地配置（如 `config/secrets.local.toml`）。`run-service --config <file>` 会自动读取同目录的 `secrets.local.toml` 并覆盖 `[relayer]` 字段。
+- 切实盘前：
+  - `[relayer]` 指向正确 base_url；dry_run=true 先联调；使用 `relayer-dry-run` 验证路径；
+  - 完成 USDC 与 outcome token 授权（allowance）；目前提供占位 CLI：`relayer-approve-usdc` 与 `relayer-approve-outcome`（在未接入真实客户端时输出友好提示）。
+  - 规则/市场风险过筛（避免 Other；核对 rule_hash）；
+  - 合理的限速/重试参数，避免自我限流或风控触发。
 
 File-level TODOs (for quick pickup)
 - adapters/polymarket/ws_translator.py: implement exact field mapping for official L2 payloads (channels, market filters) and checksum semantics; keep translate_polymarket_message backward-compatible.
@@ -61,6 +73,14 @@ Gotchas
 
 Key Commands
 - See README and docs/acceptance-walkthrough.md for end-to-end steps
+- Diagnostics: `status`, `status --verbose`, `status-top`, `metrics[-export|-serve]`
+- Strategy: `quoter-run-ws`, `quoter-run-replay`, `dutch-run-replay`
+- Relayer: `relayer-dry-run`（真 relayer 干跑）
+- Bot (offline): `tgbot-run-local`（/status、/buy、/sell）
+
+Context Compression Tips
+- 若对话上下文受限，请优先参考：`docs/roadmap.md`、`docs/technical-plan.md`、`docs/handoff.md`、`docs/progress.md` 与 `README.md`；
+- 快速起步命令见 README；运维排障见 Runbook；验收流见 acceptance-walkthrough。
 
 Contacts & Ownership
 - Add ownership and secret distribution notes here when moving to live environments

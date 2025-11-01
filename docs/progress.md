@@ -31,8 +31,35 @@ This file tracks decisions and incremental progress.
  - Gamma HTTP: pagination + tests；市场刷新调度：抖动+jitter与错误退避。
  - WS 翻译器：忽略非l2频道、支持data包裹与官方字段，严格schema校验；checksum匹配避免不必要重同步。
  - 执行引擎：幂等(plan_id+client_oid)、重试（可配置）；Prometheus 导出与HTTP服务。
- - Postgres：提供基线迁移SQL与CLI打印；连接选择器清晰失败模式。
- - S3 开始：DutchRunner（多Outcome聚合）+ CLI `dutch-run-replay`；tgbot 初版（离线命令解析+下单）。
+- Postgres：提供基线迁移SQL与CLI打印；连接选择器清晰失败模式。
+- S3 开始：DutchRunner（多Outcome聚合）+ CLI `dutch-run-replay`；tgbot 初版（离线命令解析+下单）。
+
+2025-10-31 (cont.)
+- S3 强化：
+  - DutchRunner 支持从 DB 读取 outcomes 元信息（tick/min-size/name）、安全边际（fee_bps/slippage_ticks/safety_margin_usdc），并生成稳定 plan_id（基于 outcome seqs）确保幂等。
+  - CLI：`dutch-run-replay` 增加 `--allow-other` 与 `--verbose`（输出 total_ask/margin/是否满足边际），自动 outcomes 读取与健壮性提示。
+  - 规则变更守护：检测 markets.rule_hash 变更并跳过执行（dutch_rulehash_changed 指标）。
+- Relayer：
+  - CLI `relayer-dry-run` 支持通过“real” relayer 干跑单笔 IOC（默认 dry_run=true），用于真客户端联调验证；ServiceConfig 支持 relayer {type, base_url, dry_run, private_key}。
+- Observability & Ops：
+  - 新增 `status-top` 快速诊断（按重同步比率与取消限流排序），WS 元数据保留测试（market/ts_ms）。
+  - Metrics：engine_place_ms_sum 与 engine_errors 标注下单耗时与失败。
+- Migration：
+  - `migrate --apply` 尝试在安装 psycopg 时直接应用 Postgres 迁移；未安装则返回清晰提示。
+
+2025-11-01
+- Relayer：`build_relayer("real")` 优先采用 PyClob 适配器（字段与幂等键映射一致）；保留通用适配回退。
+- Engine：新增更细粒度计时指标（`engine_place_call_ms_sum/_count`，按市场标注）；原有执行计时保持。
+- Service：`ServiceRunner` 增加任务异常防护与错误计数（`service_task_errors{market=...}`），并使用 `gather(..., return_exceptions=True)` 实现温和收敛。
+- Postgres：迁移文件补充 `idx_orders_market_status` 索引以与 SQLite 索引对齐。
+- Config：`run-service` 会读取同目录 `secrets.local.toml` 并覆盖 `[relayer]` 字段（如 `private_key`、`dry_run`）。
+- CLI：新增授权占位命令 `relayer-approve-usdc` 与 `relayer-approve-outcome`（在未接入真实客户端时输出友好提示）。
+
+Next (queued)
+- py-clob-client 封装与 dry-run 联调（EOA 签名、拒单/超时/部分成交映射、速率控制/重试），完成后提醒配置钱包切实盘。
+- S3 回放覆盖：临界边际、复杂 outcomes、规则变更大样本；CLI verbose 输出净边际分解（fee/slip/safety）。
+- tgbot 正式化：接入 Telegram SDK/webhook，权限/白名单、二段确认（dry→confirm→live）、审计日志；支持触发 Dutch/Spread、状态与托管指令。
+- 性能与观测：分段计时（下单/ack）、失败/拒单统计、DB 写路径与索引优化；WS→装配→策略链路热点优化。
 
 Open Items (as of 2025-10-31)
 - Wire real Polymarket relayer (py-clob-client), add idempotency keys, map rich OrderAck; document allowances and dry-run mode.

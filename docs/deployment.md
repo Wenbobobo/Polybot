@@ -59,6 +59,7 @@
 - 密钥与安全性：
   - 使用 `config/secrets.local.toml` 存储私钥（该文件已被 git 忽略）。请勿提交密钥。
   - 在启用后支持 EOA 签名以对接 Polymarket 中继器。
+  - 对于服务配置（`run-service --config`），加载同目录下的 `secrets.local.toml` 并自动覆盖 `[relayer]` 字段（如 `private_key`、`dry_run`）。
 - 授权与链上操作：
   - 交易前请为 Polymarket 合约设置 USDC 授权（必要时还需设置 outcome token）。
   - Gas 预算与 CTF 合并/拆分操作将在 Conversions 阶段引入。
@@ -120,3 +121,18 @@
 - 在 `config/markets.example.toml` 中设置：
   - `[relayer] type = "fake"`（默认，安全模拟）
   - 未来接入真实中继器时设置为 `"real"` 并在代码中注入实际客户端（py-clob-client）。当前版本会在未注入客户端时抛出 `NotImplementedError`，避免误发单。
+### 其他有用命令
+- 快速诊断：`uv run python -m polybot.cli status-top --db-url sqlite:///./polybot.db --limit 10`
+- 实盘干跑（需安装/配置 real relayer）：
+  - `uv run python -m polybot.cli relayer-dry-run mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x... --db-url sqlite:///./polybot.db`
+- tgbot 离线命令回放：
+  - 准备 JSONL（每行一个 update，如 `{ "message": { "text": "/help" } }`）
+  - `uv run python -m polybot.cli tgbot-run-local updates.jsonl mkt-1 yes --db-url sqlite:///./polybot.db`
+
+### 数据库迁移（PostgreSQL）
+- 查看 SQL：`uv run python -m polybot.cli migrate --db-url postgresql://user:pass@host:5432/db --print-sql`
+- 应用迁移（需安装 psycopg）：`uv run python -m polybot.cli migrate --db-url postgresql://user:pass@host:5432/db --apply`
+### （预备）授权 CLI（占位）
+- 在接入真实客户端前，以下命令会输出友好的占位消息：
+  - USDC 授权：`uv run python -m polybot.cli relayer-approve-usdc --base-url https://clob.polymarket.com --private-key 0x... --amount 100`
+  - Outcome 授权：`uv run python -m polybot.cli relayer-approve-outcome --base-url https://clob.polymarket.com --private-key 0x... --token 0x... --amount 10`
