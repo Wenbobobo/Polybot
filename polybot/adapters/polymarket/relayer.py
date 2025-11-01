@@ -132,11 +132,12 @@ def build_relayer(kind: str, **kwargs):
             # attempt to build via py-clob helper if available
             try:
                 from .real_client import make_pyclob_client  # type: ignore
-                client = make_pyclob_client(
-                    base_url=str(kwargs.get("base_url", "https://clob.polymarket.com")),
-                    private_key=str(kwargs.get("private_key", "")),
-                    dry_run=bool(kwargs.get("dry_run", True)),
-                )
+                base_url = str(kwargs.get("base_url", "https://clob.polymarket.com"))
+                private_key = str(kwargs.get("private_key", ""))
+                dry_run = bool(kwargs.get("dry_run", True))
+                # forward extra kwargs (e.g., chain_id, timeout_s)
+                extras = {k: v for k, v in kwargs.items() if k not in {"client", "base_url", "private_key", "dry_run"}}
+                client = make_pyclob_client(base_url=base_url, private_key=private_key, dry_run=dry_run, **extras)
             except Exception as e:  # noqa: BLE001
                 raise NotImplementedError(
                     "Real relayer requires an injected client instance or install py-clob-client"

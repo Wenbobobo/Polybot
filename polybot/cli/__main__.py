@@ -117,6 +117,8 @@ def main() -> None:
     p_rdry.add_argument("--base-url", default="https://clob.polymarket.com")
     p_rdry.add_argument("--private-key", default="")
     p_rdry.add_argument("--db-url", default=":memory:")
+    p_rdry.add_argument("--chain-id", type=int, default=137)
+    p_rdry.add_argument("--timeout-s", type=float, default=10.0)
 
     p_ausdc = sub.add_parser("relayer-approve-usdc", help="Approve USDC spend (stub if real client unavailable)")
     p_ausdc.add_argument("--base-url", default="https://clob.polymarket.com")

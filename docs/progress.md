@@ -54,6 +54,10 @@ This file tracks decisions and incremental progress.
 - Postgres：迁移文件补充 `idx_orders_market_status` 索引以与 SQLite 索引对齐。
 - Config：`run-service` 会读取同目录 `secrets.local.toml` 并覆盖 `[relayer]` 字段（如 `private_key`、`dry_run`）。
 - CLI：新增授权占位命令 `relayer-approve-usdc` 与 `relayer-approve-outcome`（在未接入真实客户端时输出友好提示）。
+ - WS：WebSocket 客户端加入重连与重订阅（`max_reconnects`/`backoff_ms`），新增单测覆盖。
+ - PyClob 适配器：支持转发 `approve_usdc` 与 `approve_outcome` 至底层客户端（若提供）。
+ - Postgres：新增 Timescale 可选迁移脚本 `migrations/postgres/010_timescale.sql` 与单测覆盖；增加带 stub psycopg 的 `--apply` 烟雾测试。
+ - 订单簿：添加大快照用例以验证装配与最佳价提取在大数组下的稳健性。
 
 Next (queued)
 - py-clob-client 封装与 dry-run 联调（EOA 签名、拒单/超时/部分成交映射、速率控制/重试），完成后提醒配置钱包切实盘。

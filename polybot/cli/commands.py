@@ -222,6 +222,8 @@ async def cmd_run_service_from_config_async(config_path: str) -> None:
         "base_url": cfg.relayer_base_url,
         "dry_run": cfg.relayer_dry_run,
         "private_key": cfg.relayer_private_key,
+        "chain_id": cfg.relayer_chain_id,
+        "timeout_s": cfg.relayer_timeout_s,
     }
     sr = ServiceRunner(db_url=cfg.db_url, params=cfg.default_spread, relayer_type=cfg.relayer_type, relayer_kwargs=rel_kwargs)
     await sr.run_markets(cfg.markets)
@@ -439,7 +441,7 @@ def cmd_migrate(db_url: str, print_sql: bool = False, apply: bool = False) -> st
     return out
 
 
-def cmd_relayer_dry_run(market_id: str, outcome_id: str, side: str, price: float, size: float, base_url: str, private_key: str, db_url: str = ":memory:") -> str:
+def cmd_relayer_dry_run(market_id: str, outcome_id: str, side: str, price: float, size: float, base_url: str, private_key: str, db_url: str = ":memory:", chain_id: int = 137, timeout_s: float = 10.0) -> str:
     """Place a single IOC order via 'real' relayer in dry-run mode.
 
     This uses build_relayer('real', base_url=..., private_key=..., dry_run=True).
@@ -447,7 +449,7 @@ def cmd_relayer_dry_run(market_id: str, outcome_id: str, side: str, price: float
     """
     setup_logging()
     try:
-        rel = build_relayer("real", base_url=base_url, private_key=private_key, dry_run=True)
+        rel = build_relayer("real", base_url=base_url, private_key=private_key, dry_run=True, chain_id=chain_id, timeout_s=timeout_s)
     except Exception as e:
         msg = f"relayer unavailable: {e}"
         print(msg)
@@ -464,56 +466,73 @@ def cmd_relayer_dry_run(market_id: str, outcome_id: str, side: str, price: float
     return out
 
 
-def _try_build_real_relayer(base_url: str, private_key: str):
+def _try_build_real_relayer(base_url: str, private_key: str, chain_id: int = 137, timeout_s: float = 10.0):
     try:
-        return build_relayer("real", base_url=base_url, private_key=private_key, dry_run=False)
+        return build_relayer("real", base_url=base_url, private_key=private_key, dry_run=False, chain_id=chain_id, timeout_s=timeout_s)
     except Exception as e:  # noqa: BLE001
         return f"relayer unavailable: {e}"
 
 
-def cmd_relayer_approve_usdc(base_url: str, private_key: str, amount: float) -> str:
+def cmd_relayer_approve_usdc(base_url: str, private_key: str, amount: float, retries: int = 2, backoff_ms: int = 100, chain_id: int = 137, timeout_s: float = 10.0) -> str:
     """Approve USDC spend for relayer (stub).
 
     Until a real client is wired with allowance helpers, this prints a friendly message
     when the relayer is unavailable or lacks the method.
     """
-    rel = _try_build_real_relayer(base_url, private_key)
+    from polybot.observability.metrics import inc_labelled
+    rel = _try_build_real_relayer(base_url, private_key, chain_id=chain_id, timeout_s=timeout_s)
     if isinstance(rel, str):
         print(rel)
         return rel
-    try:
-        # Placeholder: real client method name TBD
-        if hasattr(rel, "approve_usdc"):
-            tx = rel.approve_usdc(amount)  # type: ignore[attr-defined]
-            msg = f"approve_usdc submitted: {tx}"
-        else:
-            msg = "not implemented: relayer client missing approve_usdc()"
-        print(msg)
-        return msg
-    except Exception as e:  # noqa: BLE001
-        msg = f"relayer unavailable: {e}"
-        print(msg)
-        return msg
+    attempt = 0
+    while True:
+        try:
+            inc_labelled("relayer_allowance_attempts", {"kind": "usdc"}, 1)
+            if hasattr(rel, "approve_usdc"):
+                tx = rel.approve_usdc(amount)  # type: ignore[attr-defined]
+                msg = f"approve_usdc submitted: {tx}"
+            else:
+                msg = "not implemented: relayer client missing approve_usdc()"
+            print(msg)
+            return msg
+        except Exception as e:  # noqa: BLE001
+            attempt += 1
+            inc_labelled("relayer_allowance_errors", {"kind": "usdc"}, 1)
+            if attempt > retries:
+                msg = f"relayer unavailable: {e}"
+                print(msg)
+                return msg
+            import time as _t
+            _t.sleep(backoff_ms / 1000.0)
 
 
-def cmd_relayer_approve_outcome(base_url: str, private_key: str, token_address: str, amount: float) -> str:
+def cmd_relayer_approve_outcome(base_url: str, private_key: str, token_address: str, amount: float, retries: int = 2, backoff_ms: int = 100, chain_id: int = 137, timeout_s: float = 10.0) -> str:
     """Approve outcome token spend for relayer (stub)."""
-    rel = _try_build_real_relayer(base_url, private_key)
+    from polybot.observability.metrics import inc_labelled
+    rel = _try_build_real_relayer(base_url, private_key, chain_id=chain_id, timeout_s=timeout_s)
     if isinstance(rel, str):
         print(rel)
         return rel
-    try:
-        if hasattr(rel, "approve_outcome"):
-            tx = rel.approve_outcome(token_address, amount)  # type: ignore[attr-defined]
-            msg = f"approve_outcome submitted: {tx}"
-        else:
-            msg = "not implemented: relayer client missing approve_outcome()"
-        print(msg)
-        return msg
-    except Exception as e:  # noqa: BLE001
-        msg = f"relayer unavailable: {e}"
-        print(msg)
-        return msg
+    attempt = 0
+    while True:
+        try:
+            inc_labelled("relayer_allowance_attempts", {"kind": "outcome"}, 1)
+            if hasattr(rel, "approve_outcome"):
+                tx = rel.approve_outcome(token_address, amount)  # type: ignore[attr-defined]
+                msg = f"approve_outcome submitted: {tx}"
+            else:
+                msg = "not implemented: relayer client missing approve_outcome()"
+            print(msg)
+            return msg
+        except Exception as e:  # noqa: BLE001
+            attempt += 1
+            inc_labelled("relayer_allowance_errors", {"kind": "outcome"}, 1)
+            if attempt > retries:
+                msg = f"relayer unavailable: {e}"
+                print(msg)
+                return msg
+            import time as _t
+            _t.sleep(backoff_ms / 1000.0)
 
 
 def cmd_tgbot_run_local(updates_file: str, market_id: str, outcome_yes_id: str, db_url: str = ":memory:") -> str:

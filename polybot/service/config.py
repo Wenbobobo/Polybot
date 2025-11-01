@@ -18,6 +18,8 @@ class ServiceConfig:
     relayer_base_url: str = "https://clob.polymarket.com"
     relayer_dry_run: bool = True
     relayer_private_key: str = ""
+    relayer_chain_id: int = 137
+    relayer_timeout_s: float = 10.0
 
 
 def _parse_spread(obj: dict | None) -> SpreadParams:
@@ -57,6 +59,8 @@ def load_service_config(path: str | Path) -> ServiceConfig:
     relayer_base_url = rel.get("base_url", "https://clob.polymarket.com")
     relayer_dry_run = bool(rel.get("dry_run", True))
     relayer_private_key = rel.get("private_key", "")
+    relayer_chain_id = int(rel.get("chain_id", 137))
+    relayer_timeout_s = float(rel.get("timeout_s", 10.0))
     default_spread = _parse_spread(svc.get("spread"))
     markets: List[MarketSpec] = []
     for m in data.get("market", []) or []:
@@ -79,4 +83,6 @@ def load_service_config(path: str | Path) -> ServiceConfig:
         relayer_base_url=str(relayer_base_url),
         relayer_dry_run=relayer_dry_run,
         relayer_private_key=str(relayer_private_key),
+        relayer_chain_id=relayer_chain_id,
+        relayer_timeout_s=relayer_timeout_s,
     )

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def make_pyclob_client(base_url: str, private_key: str, dry_run: bool = True) -> Any:
+def make_pyclob_client(base_url: str, private_key: str, dry_run: bool = True, **kwargs: Any) -> Any:
     """Construct a py-clob-client instance from settings.
 
     This function defers the import and raises NotImplementedError with a friendly message
@@ -19,6 +19,6 @@ def make_pyclob_client(base_url: str, private_key: str, dry_run: bool = True) ->
         ) from e
 
     # Placeholder construction; actual constructor may differ.
-    client = ClobClient(base_url=base_url, private_key=private_key, dry_run=dry_run)
+    # Forward any extra kwargs (e.g., network/chain/timeouts) to the client ctor
+    client = ClobClient(base_url=base_url, private_key=private_key, dry_run=dry_run, **kwargs)
     return client
-
