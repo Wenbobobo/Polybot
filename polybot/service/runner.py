@@ -41,17 +41,24 @@ async def _aiter_translated_ws(url: str, max_messages: Optional[int] = None, sub
 
 
 class ServiceRunner:
-    def __init__(self, db_url: str, params: Optional[SpreadParams] = None, relayer_type: str = "fake", relayer_kwargs: Optional[dict] = None):
+    def __init__(self, db_url: str, params: Optional[SpreadParams] = None, relayer_type: str = "fake", relayer_kwargs: Optional[dict] = None, engine_max_retries: int = 0, engine_retry_sleep_ms: int = 0):
         self.db_url = db_url
         self.params = params or SpreadParams()
         self.relayer_type = relayer_type
         self.relayer_kwargs = relayer_kwargs or {}
+        self.engine_max_retries = max(0, int(engine_max_retries))
+        self.engine_retry_sleep_ms = max(0, int(engine_retry_sleep_ms))
         self.con = connect(db_url)
         enable_wal(self.con)
         schema_mod.create_all(self.con)
 
     async def run_markets(self, markets: List[MarketSpec]) -> None:
-        engine = ExecutionEngine(build_relayer(self.relayer_type, **self.relayer_kwargs), audit_db=self.con)
+        engine = ExecutionEngine(
+            build_relayer(self.relayer_type, **self.relayer_kwargs),
+            audit_db=self.con,
+            max_retries=self.engine_max_retries,
+            retry_sleep_ms=self.engine_retry_sleep_ms,
+        )
         tasks: List[asyncio.Task] = []
 
         async def _wrap_market(ms: MarketSpec) -> None:

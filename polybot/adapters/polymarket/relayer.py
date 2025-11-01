@@ -101,24 +101,53 @@ class RelayerClient:
             if idempotency_prefix and r.client_order_id:
                 p["idempotency_key"] = f"{idempotency_prefix}:{r.client_order_id}"
             payload.append(p)
-        raw = self._client.place_orders(payload)
+        try:
+            raw = self._client.place_orders(payload)
+        except Exception:
+            # increment relayer_place_errors per market and re-raise
+            try:
+                from polybot.observability.metrics import inc_labelled  # local import to avoid cycles
+
+                for r in reqs:
+                    inc_labelled("relayer_place_errors", {"market": r.market_id}, 1)
+            except Exception:
+                pass
+            raise
         acks: List[OrderAck] = []
         for a in raw:
+            # accept variant keys and infer acceptance from status if accepted missing
+            status = str(a.get("status", "")).lower()
+            accepted_flag = a.get("accepted")
+            if accepted_flag is None:
+                accepted_flag = status in ("accepted", "filled", "partial")
+            client_oid = a.get("client_order_id") or a.get("clientOrderId")
+            order_id = a.get("order_id") or a.get("orderId") or ""
+            filled = a.get("filled_size") if a.get("filled_size") is not None else a.get("filledSize", 0.0)
+            remaining = a.get("remaining_size") if a.get("remaining_size") is not None else a.get("remainingSize", 0.0)
             acks.append(
                 OrderAck(
-                    order_id=str(a.get("order_id", "")),
-                    accepted=bool(a.get("accepted", False)),
-                    filled_size=float(a.get("filled_size", 0.0)),
-                    remaining_size=float(a.get("remaining_size", 0.0)),
+                    order_id=str(order_id),
+                    accepted=bool(accepted_flag),
+                    filled_size=float(filled or 0.0),
+                    remaining_size=float(remaining or 0.0),
                     status=str(a.get("status", "accepted")),
-                    client_order_id=a.get("client_order_id"),
+                    client_order_id=client_oid,
                 )
             )
         return acks
 
     def cancel_client_orders(self, client_order_ids: List[str]) -> List[CancelAck]:
         raw = self._client.cancel_orders(client_order_ids)
-        return [CancelAck(client_order_id=str(a.get("client_order_id", "")), canceled=bool(a.get("canceled", False))) for a in raw]
+        out: List[CancelAck] = []
+        for a in raw:
+            cid = a.get("client_order_id") or a.get("clientOrderId") or ""
+            canceled = a.get("canceled")
+            if canceled is None:
+                # accept status variants
+                status = str(a.get("status", "")).lower()
+                canceled = status == "canceled"
+            out.append(CancelAck(client_order_id=str(cid), canceled=bool(canceled)))
+        return out
 
 
 def build_relayer(kind: str, **kwargs):

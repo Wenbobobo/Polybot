@@ -79,6 +79,9 @@ def cmd_status(db_url: str = ":memory:", verbose: bool = False) -> str:
             qcrl = get_counter_labelled("quotes_cancel_rate_limited", {"market": mkt})
             op = get_counter_labelled("orders_placed", {"market": mkt})
             of = get_counter_labelled("orders_filled", {"market": mkt})
+            rak_ok = get_counter_labelled("relayer_acks_accepted", {"market": mkt})
+            rak_rej = get_counter_labelled("relayer_acks_rejected", {"market": mkt})
+            eret = get_counter_labelled("engine_retries", {"market": mkt})
             dplaced = get_counter_labelled("dutch_orders_placed", {"market": mkt})
             drh = get_counter_labelled("dutch_rulehash_changed", {"market": mkt})
             ems = get_counter_labelled("engine_execute_plan_ms_sum", {"market": mkt})
@@ -87,7 +90,8 @@ def cmd_status(db_url: str = ":memory:", verbose: bool = False) -> str:
             total_resyncs = gap + csum + firstd
             resync_ratio = (total_resyncs / max(1, applied)) if applied else 0
             lines.append(f"  quotes: placed={qp} canceled={qc} skipped={qs} skipped_same={qss} rate_limited={qrl} cancel_rate_limited={qcrl}")
-            lines.append(f"  orders: placed={op} filled={of} exec_avg_ms={avg_ms:.1f} exec_count={ec}")
+            lines.append(f"  orders: placed={op} filled={of} exec_avg_ms={avg_ms:.1f} exec_count={ec} retries={eret}")
+            lines.append(f"  relayer: acks_accepted={rak_ok} acks_rejected={rak_rej}")
             lines.append(f"  dutch: placed={dplaced} rulehash_changed={drh}")
             lines.append(f"  resyncs: total={total_resyncs} ratio={resync_ratio:.3f}")
     out = "\n".join(lines)
@@ -112,13 +116,14 @@ def cmd_status_top(db_url: str = ":memory:", limit: int = 5) -> str:
         total_resyncs = gap + csum + firstd
         resync_ratio = (total_resyncs / max(1, applied)) if applied else 0
         cancel_rl = get_counter_labelled("quotes_cancel_rate_limited", {"market": mkt})
-        stats.append((mkt, resync_ratio, cancel_rl))
-    # Sort by resync ratio desc then cancel rate-limit desc
-    stats.sort(key=lambda x: (-x[1], -x[2], x[0]))
+        rejects = get_counter_labelled("relayer_acks_rejected", {"market": mkt})
+        stats.append((mkt, resync_ratio, cancel_rl, rejects))
+    # Sort: resync ratio desc, then rejects desc, then cancel rate-limit desc
+    stats.sort(key=lambda x: (-x[1], -x[3], -x[2], x[0]))
     top = stats[: max(1, limit)]
-    lines = ["market_id resync_ratio cancel_rate_limited"]
-    for mkt, ratio, crl in top:
-        lines.append(f"{mkt} {ratio:.3f} {crl}")
+    lines = ["market_id resync_ratio rejects cancel_rate_limited"]
+    for mkt, ratio, crl, rej in top:
+        lines.append(f"{mkt} {ratio:.3f} {rej} {crl}")
     out = "\n".join(lines)
     print(out)
     return out
@@ -248,6 +253,16 @@ def cmd_conversions_split(market_id: str, yes_id: str, no_id: str, usdc_amount: 
     return out
 
 
+def cmd_smoke_live(config_path: str, market_id: str, outcome_id: str, side: str, price: float, size: float, base_url: str, private_key: str, chain_id: int = 137, timeout_s: float = 10.0) -> str:
+    pre = cmd_preflight(config_path)
+    if not pre.startswith("OK:"):
+        return pre
+    res = cmd_relayer_dry_run(market_id, outcome_id, side, price, size, base_url=base_url, private_key=private_key, db_url=":memory:", chain_id=chain_id, timeout_s=timeout_s)
+    out = f"{pre}\n{res}"
+    print(out)
+    return out
+
+
 def cmd_refresh_markets(base_url: str, db_url: str = ":memory:") -> int:
     setup_logging()
     con = init_db(db_url)
@@ -310,7 +325,14 @@ async def cmd_run_service_from_config_async(config_path: str) -> None:
         "chain_id": cfg.relayer_chain_id,
         "timeout_s": cfg.relayer_timeout_s,
     }
-    sr = ServiceRunner(db_url=cfg.db_url, params=cfg.default_spread, relayer_type=cfg.relayer_type, relayer_kwargs=rel_kwargs)
+    sr = ServiceRunner(
+        db_url=cfg.db_url,
+        params=cfg.default_spread,
+        relayer_type=cfg.relayer_type,
+        relayer_kwargs=rel_kwargs,
+        engine_max_retries=cfg.engine_max_retries,
+        engine_retry_sleep_ms=cfg.engine_retry_sleep_ms,
+    )
     await sr.run_markets(cfg.markets)
 
 

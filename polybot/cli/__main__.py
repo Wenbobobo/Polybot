@@ -148,6 +148,18 @@ def main() -> None:
     p_split.add_argument("no_id")
     p_split.add_argument("usdc_amount", type=float)
 
+    p_smoke = sub.add_parser("smoke-live", help="Preflight + single relayer dry-run for live readiness")
+    p_smoke.add_argument("--config", required=True)
+    p_smoke.add_argument("market_id")
+    p_smoke.add_argument("outcome_id")
+    p_smoke.add_argument("side", choices=["buy", "sell"])
+    p_smoke.add_argument("price", type=float)
+    p_smoke.add_argument("size", type=float)
+    p_smoke.add_argument("--base-url", default="https://clob.polymarket.com")
+    p_smoke.add_argument("--private-key", default="")
+    p_smoke.add_argument("--chain-id", type=int, default=137)
+    p_smoke.add_argument("--timeout-s", type=float, default=10.0)
+
     p_tg = sub.add_parser("tgbot-run-local", help="Run offline Telegram-like updates from JSONL and print responses")
     p_tg.add_argument("updates_file")
     p_tg.add_argument("market_id")
@@ -181,6 +193,20 @@ def main() -> None:
     elif args.cmd == "conversions-split":
         from .commands import cmd_conversions_split
         cmd_conversions_split(args.market_id, args.yes_id, args.no_id, args.usdc_amount)
+    elif args.cmd == "smoke-live":
+        from .commands import cmd_smoke_live
+        cmd_smoke_live(
+            args.config,
+            args.market_id,
+            args.outcome_id,
+            args.side,
+            args.price,
+            args.size,
+            base_url=args.base_url,
+            private_key=args.private_key,
+            chain_id=args.chain_id,
+            timeout_s=args.timeout_s,
+        )
     elif args.cmd == "status-top":
         cmd_status_top(db_url=args.db_url, limit=args.limit)
     elif args.cmd == "migrate":

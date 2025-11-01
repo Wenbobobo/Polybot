@@ -75,6 +75,8 @@ class ExecutionEngine:
                     break
                 except Exception:
                     attempt += 1
+                    for mid in set(i.market_id for i in plan.intents):
+                        inc_labelled("engine_retries", {"market": mid}, 1)
                     if attempt > self.max_retries:
                         # count error per market(s)
                         for mid in set(i.market_id for i in plan.intents):
@@ -97,6 +99,15 @@ class ExecutionEngine:
             inc_labelled("orders_placed", {"market": it.market_id}, 1)
             if ack.remaining_size == 0.0 and ack.accepted:
                 inc_labelled("orders_filled", {"market": it.market_id}, 1)
+            # Relayer ack metrics by status and acceptance
+            try:
+                inc_labelled("relayer_acks", {"market": it.market_id, "status": str(ack.status)}, 1)
+                if ack.accepted:
+                    inc_labelled("relayer_acks_accepted", {"market": it.market_id}, 1)
+                else:
+                    inc_labelled("relayer_acks_rejected", {"market": it.market_id}, 1)
+            except Exception:
+                pass
         # labelled duration per market (same duration applied to all intents' markets in this simple model)
         dur_ms = int((time.perf_counter() - start_perf) * 1000)
         seen_markets = set(i.market_id for i in plan.intents)
