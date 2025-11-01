@@ -34,6 +34,7 @@ from polybot.observability.server import start_metrics_server
 from polybot.storage.migrate import migrate as migrate_db
 from polybot.tgbot.agent import BotAgent, BotContext
 from polybot.tgbot.runner import TelegramUpdateRunner
+from polybot.storage.db import parse_db_url
 
 
 def init_db(db_url: str):
@@ -161,6 +162,69 @@ def cmd_metrics_export() -> str:
     text = prometheus_export_text()
     print(text, end="")
     return text
+
+
+def cmd_migrate_timescale_print() -> str:
+    """Print the optional Timescale migration SQL.
+
+    This does not apply any changes; it simply prints the contents of
+    migrations/postgres/010_timescale.sql if present.
+    """
+    p = Path("migrations/postgres/010_timescale.sql")
+    if not p.exists():
+        msg = "timescale migration file not found"
+        print(msg)
+        return msg
+    text = p.read_text(encoding="utf-8")
+    print(text, end="")
+    return text
+
+
+def cmd_preflight(config_path: str) -> str:
+    """Validate a service config TOML before enabling real trading.
+
+    Checks:
+    - TOML parse success
+    - DB URL scheme supported
+    - If relayer.type == real: private_key format, chain_id > 0
+    - At least one market configured
+    Returns a multi-line string summary and prints it.
+    """
+    issues: list[str] = []
+    try:
+        cfg = load_service_config(config_path)
+    except Exception as e:  # noqa: BLE001
+        out = f"INVALID: failed to parse config: {e}"
+        print(out)
+        return out
+    # DB URL
+    try:
+        scheme, _ = parse_db_url(cfg.db_url)
+        if scheme not in ("sqlite", "postgresql"):
+            issues.append(f"unsupported db scheme: {scheme}")
+    except Exception as e:  # noqa: BLE001
+        issues.append(f"invalid db_url: {e}")
+    # Relayer
+    if cfg.relayer_type.lower() == "real":
+        from polybot.adapters.polymarket.crypto import is_valid_private_key
+
+        if not cfg.relayer_private_key or not is_valid_private_key(cfg.relayer_private_key):
+            issues.append("relayer.private_key is invalid (expect 0x-prefixed 32-byte hex)")
+        if int(cfg.relayer_chain_id) <= 0:
+            issues.append("relayer.chain_id must be > 0")
+    # Markets
+    if not cfg.markets:
+        issues.append("no markets configured")
+
+    if issues:
+        header = "INVALID: preflight checks failed"
+        lines = [header] + [f" - {i}" for i in issues]
+        out = "\n".join(lines)
+        print(out)
+        return out
+    out = "OK: preflight passed"
+    print(out)
+    return out
 
 
 def cmd_refresh_markets(base_url: str, db_url: str = ":memory:") -> int:
@@ -451,6 +515,15 @@ def cmd_relayer_dry_run(market_id: str, outcome_id: str, side: str, price: float
     try:
         rel = build_relayer("real", base_url=base_url, private_key=private_key, dry_run=True, chain_id=chain_id, timeout_s=timeout_s)
     except Exception as e:
+        # If the relayer is unavailable and PK is clearly invalid, provide a clearer hint
+        try:
+            from polybot.adapters.polymarket.crypto import is_valid_private_key
+            if not is_valid_private_key(private_key):
+                msg = "invalid private_key: expecting 0x-prefixed 32-byte hex"
+                print(msg)
+                return msg
+        except Exception:
+            pass
         msg = f"relayer unavailable: {e}"
         print(msg)
         return msg

@@ -74,9 +74,13 @@ class PyClobRelayer:
     def approve_usdc(self, amount: float):  # pragma: no cover - behavior exercised via stub tests
         if hasattr(self._client, "approve_usdc"):
             return getattr(self._client, "approve_usdc")(amount)
+        if hasattr(self._client, "approveUsdc"):
+            return getattr(self._client, "approveUsdc")(amount)
         raise NotImplementedError("approve_usdc not available on underlying client")
 
     def approve_outcome(self, token_address: str, amount: float):  # pragma: no cover
         if hasattr(self._client, "approve_outcome"):
             return getattr(self._client, "approve_outcome")(token_address, amount)
+        if hasattr(self._client, "approveOutcome"):
+            return getattr(self._client, "approveOutcome")(token_address, amount)
         raise NotImplementedError("approve_outcome not available on underlying client")

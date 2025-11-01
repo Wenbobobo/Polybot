@@ -58,6 +58,11 @@ def main() -> None:
     p_mserve.add_argument("--host", default="127.0.0.1")
     p_mserve.add_argument("--port", type=int, default=0)
 
+    p_mts = sub.add_parser("migrate-timescale", help="Print optional Timescale migration SQL")
+
+    p_pf = sub.add_parser("preflight", help="Validate a service config TOML before running live")
+    p_pf.add_argument("--config", required=True)
+
     p_migrate = sub.add_parser("migrate", help="Run or print DB migrations")
     p_migrate.add_argument("--db-url", required=True)
     p_migrate.add_argument("--print-sql", action="store_true")
@@ -152,6 +157,12 @@ def main() -> None:
         cmd_metrics_export()
     elif args.cmd == "metrics-serve":
         cmd_metrics_serve(host=args.host, port=args.port)
+    elif args.cmd == "migrate-timescale":
+        from .commands import cmd_migrate_timescale_print
+        cmd_migrate_timescale_print()
+    elif args.cmd == "preflight":
+        from .commands import cmd_preflight
+        cmd_preflight(args.config)
     elif args.cmd == "status-top":
         cmd_status_top(db_url=args.db_url, limit=args.limit)
     elif args.cmd == "migrate":
