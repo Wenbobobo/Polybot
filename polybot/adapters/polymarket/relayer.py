@@ -138,6 +138,15 @@ def build_relayer(kind: str, **kwargs):
                     dry_run=bool(kwargs.get("dry_run", True)),
                 )
             except Exception as e:  # noqa: BLE001
-                raise NotImplementedError("Real relayer requires an injected client instance or install py-clob-client") from e
-        return RelayerClient(client)
+                raise NotImplementedError(
+                    "Real relayer requires an injected client instance or install py-clob-client"
+                ) from e
+        # Prefer the py-clob adapter for real clients so that request/response
+        # mapping and idempotency keys match the official client.
+        try:
+            from .pyclob_adapter import PyClobRelayer  # type: ignore
+            return PyClobRelayer(client)
+        except Exception:
+            # Fallback to generic mapping if adapter import fails
+            return RelayerClient(client)
     raise ValueError(f"Unknown relayer kind: {kind}")

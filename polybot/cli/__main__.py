@@ -3,7 +3,25 @@ from __future__ import annotations
 import argparse
 
 from .commands import cmd_replay, cmd_ingest_ws
-from .commands import cmd_status, cmd_refresh_markets, cmd_quoter_run_ws_async, cmd_health, cmd_metrics, cmd_record_ws_async, cmd_quoter_run_replay_async, cmd_mock_ws_async, cmd_metrics_export, cmd_metrics_serve, cmd_migrate, cmd_dutch_run_replay_async, cmd_relayer_dry_run, cmd_status_top, cmd_tgbot_run_local
+from .commands import (
+    cmd_status,
+    cmd_refresh_markets,
+    cmd_quoter_run_ws_async,
+    cmd_health,
+    cmd_metrics,
+    cmd_record_ws_async,
+    cmd_quoter_run_replay_async,
+    cmd_mock_ws_async,
+    cmd_metrics_export,
+    cmd_metrics_serve,
+    cmd_migrate,
+    cmd_dutch_run_replay_async,
+    cmd_relayer_dry_run,
+    cmd_status_top,
+    cmd_tgbot_run_local,
+    cmd_relayer_approve_usdc,
+    cmd_relayer_approve_outcome,
+)
 from polybot.cli.commands import cmd_run_service_from_config_async
 
 
@@ -100,6 +118,17 @@ def main() -> None:
     p_rdry.add_argument("--private-key", default="")
     p_rdry.add_argument("--db-url", default=":memory:")
 
+    p_ausdc = sub.add_parser("relayer-approve-usdc", help="Approve USDC spend (stub if real client unavailable)")
+    p_ausdc.add_argument("--base-url", default="https://clob.polymarket.com")
+    p_ausdc.add_argument("--private-key", default="")
+    p_ausdc.add_argument("--amount", type=float, required=True)
+
+    p_aout = sub.add_parser("relayer-approve-outcome", help="Approve outcome token spend (stub if real client unavailable)")
+    p_aout.add_argument("--base-url", default="https://clob.polymarket.com")
+    p_aout.add_argument("--private-key", default="")
+    p_aout.add_argument("--token", required=True)
+    p_aout.add_argument("--amount", type=float, required=True)
+
     p_tg = sub.add_parser("tgbot-run-local", help="Run offline Telegram-like updates from JSONL and print responses")
     p_tg.add_argument("updates_file")
     p_tg.add_argument("market_id")
@@ -158,6 +187,11 @@ def main() -> None:
                 allow_other=args.allow_other,
                 verbose=args.verbose,
             )
+        )
+    elif args.cmd == "relayer-approve-usdc":
+        cmd_relayer_approve_usdc(base_url=args.base_url, private_key=args.private_key, amount=args.amount)
+    elif args.cmd == "relayer-approve-outcome":
+        cmd_relayer_approve_outcome(base_url=args.base_url, private_key=args.private_key, token_address=args.token, amount=args.amount)
         )
     elif args.cmd == "relayer-dry-run":
         cmd_relayer_dry_run(

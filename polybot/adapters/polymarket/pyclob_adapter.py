@@ -70,3 +70,13 @@ class PyClobRelayer:
             for a in raw
         ]
 
+    # Optional allowance helpers — forwarded if underlying client exposes them.
+    def approve_usdc(self, amount: float):  # pragma: no cover - behavior exercised via stub tests
+        if hasattr(self._client, "approve_usdc"):
+            return getattr(self._client, "approve_usdc")(amount)
+        raise NotImplementedError("approve_usdc not available on underlying client")
+
+    def approve_outcome(self, token_address: str, amount: float):  # pragma: no cover
+        if hasattr(self._client, "approve_outcome"):
+            return getattr(self._client, "approve_outcome")(token_address, amount)
+        raise NotImplementedError("approve_outcome not available on underlying client")

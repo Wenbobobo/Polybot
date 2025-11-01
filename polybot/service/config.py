@@ -36,7 +36,20 @@ def _parse_spread(obj: dict | None) -> SpreadParams:
 
 def load_service_config(path: str | Path) -> ServiceConfig:
     p = Path(path)
-    data = tomllib.loads(Path(p).read_text(encoding="utf-8")) if False else tomllib.load(open(p, "rb"))
+    data = tomllib.load(open(p, "rb"))
+    # Optional secrets overlay from a sibling secrets.local.toml (gitignored by default)
+    secrets_path = p.parent / "secrets.local.toml"
+    if secrets_path.exists():
+        try:
+            secrets = tomllib.load(open(secrets_path, "rb"))
+            # shallow merge only for [relayer]
+            rel_overlay = (secrets.get("relayer", {}) or {})
+            if rel_overlay:
+                base_rel = (data.get("relayer", {}) or {}).copy()
+                base_rel.update(rel_overlay)
+                data["relayer"] = base_rel
+        except Exception:
+            pass
     svc = data.get("service", {})
     db_url = svc.get("db_url", ":memory:")
     rel = (data.get("relayer", {}) or {})

@@ -464,6 +464,58 @@ def cmd_relayer_dry_run(market_id: str, outcome_id: str, side: str, price: float
     return out
 
 
+def _try_build_real_relayer(base_url: str, private_key: str):
+    try:
+        return build_relayer("real", base_url=base_url, private_key=private_key, dry_run=False)
+    except Exception as e:  # noqa: BLE001
+        return f"relayer unavailable: {e}"
+
+
+def cmd_relayer_approve_usdc(base_url: str, private_key: str, amount: float) -> str:
+    """Approve USDC spend for relayer (stub).
+
+    Until a real client is wired with allowance helpers, this prints a friendly message
+    when the relayer is unavailable or lacks the method.
+    """
+    rel = _try_build_real_relayer(base_url, private_key)
+    if isinstance(rel, str):
+        print(rel)
+        return rel
+    try:
+        # Placeholder: real client method name TBD
+        if hasattr(rel, "approve_usdc"):
+            tx = rel.approve_usdc(amount)  # type: ignore[attr-defined]
+            msg = f"approve_usdc submitted: {tx}"
+        else:
+            msg = "not implemented: relayer client missing approve_usdc()"
+        print(msg)
+        return msg
+    except Exception as e:  # noqa: BLE001
+        msg = f"relayer unavailable: {e}"
+        print(msg)
+        return msg
+
+
+def cmd_relayer_approve_outcome(base_url: str, private_key: str, token_address: str, amount: float) -> str:
+    """Approve outcome token spend for relayer (stub)."""
+    rel = _try_build_real_relayer(base_url, private_key)
+    if isinstance(rel, str):
+        print(rel)
+        return rel
+    try:
+        if hasattr(rel, "approve_outcome"):
+            tx = rel.approve_outcome(token_address, amount)  # type: ignore[attr-defined]
+            msg = f"approve_outcome submitted: {tx}"
+        else:
+            msg = "not implemented: relayer client missing approve_outcome()"
+        print(msg)
+        return msg
+    except Exception as e:  # noqa: BLE001
+        msg = f"relayer unavailable: {e}"
+        print(msg)
+        return msg
+
+
 def cmd_tgbot_run_local(updates_file: str, market_id: str, outcome_yes_id: str, db_url: str = ":memory:") -> str:
     setup_logging()
     con = init_db(db_url)

@@ -53,13 +53,26 @@ class ServiceRunner:
     async def run_markets(self, markets: List[MarketSpec]) -> None:
         engine = ExecutionEngine(build_relayer(self.relayer_type, **self.relayer_kwargs), audit_db=self.con)
         tasks: List[asyncio.Task] = []
-        for ms in markets:
+
+        async def _wrap_market(ms: MarketSpec) -> None:
             sp = ms.spread_params or self.params
             quoter = SpreadQuoter(ms.market_id, ms.outcome_yes_id, sp, engine)
             runner = QuoterRunner(ms.market_id, quoter)
             sub = build_subscribe_l2(ms.market_id) if ms.subscribe else None
             now_ms = lambda: int(time.time() * 1000)
-            coro = runner.run(_aiter_translated_ws(ms.ws_url, max_messages=ms.max_messages, subscribe_message=sub), now_ms)
-            tasks.append(asyncio.create_task(coro))
+            try:
+                await runner.run(
+                    _aiter_translated_ws(ms.ws_url, max_messages=ms.max_messages, subscribe_message=sub),
+                    now_ms,
+                )
+            except Exception:
+                from polybot.observability.metrics import inc_labelled
+
+                inc_labelled("service_task_errors", {"market": ms.market_id}, 1)
+                # swallow to keep service running other markets
+                return
+
+        for ms in markets:
+            tasks.append(asyncio.create_task(_wrap_market(ms)))
         if tasks:
-            await asyncio.gather(*tasks)
+            await asyncio.gather(*tasks, return_exceptions=True)

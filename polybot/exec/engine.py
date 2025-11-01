@@ -53,14 +53,25 @@ class ExecutionEngine:
             attempt = 0
             while True:
                 try:
+                    call_start = time.perf_counter()
                     sig = inspect.signature(self.relayer.place_orders)  # type: ignore[attr-defined]
                     if "idempotency_prefix" in sig.parameters:
                         acks = self.relayer.place_orders(reqs, idempotency_prefix=plan_id)  # type: ignore[arg-type]
                     else:
                         acks = self.relayer.place_orders(reqs)  # type: ignore[call-arg]
+                    call_dur_ms = int((time.perf_counter() - call_start) * 1000)
+                    # labelled duration per market for the relayer call itself
+                    for mid in set(i.market_id for i in plan.intents):
+                        inc_labelled("engine_place_call_ms_sum", {"market": mid}, call_dur_ms)
+                        inc_labelled("engine_place_call_count", {"market": mid}, 1)
                     break
                 except (TypeError, ValueError, AttributeError):
+                    call_start = time.perf_counter()
                     acks = self.relayer.place_orders(reqs)  # type: ignore[call-arg]
+                    call_dur_ms = int((time.perf_counter() - call_start) * 1000)
+                    for mid in set(i.market_id for i in plan.intents):
+                        inc_labelled("engine_place_call_ms_sum", {"market": mid}, call_dur_ms)
+                        inc_labelled("engine_place_call_count", {"market": mid}, 1)
                     break
                 except Exception:
                     attempt += 1
