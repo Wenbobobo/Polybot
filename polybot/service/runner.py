@@ -62,6 +62,8 @@ class ServiceRunner:
         tasks: List[asyncio.Task] = []
 
         async def _wrap_market(ms: MarketSpec) -> None:
+            import time as _t
+            start = _t.perf_counter()
             sp = ms.spread_params or self.params
             quoter = SpreadQuoter(ms.market_id, ms.outcome_yes_id, sp, engine)
             runner = QuoterRunner(ms.market_id, quoter)
@@ -77,6 +79,9 @@ class ServiceRunner:
                     from polybot.observability.metrics import inc_labelled
 
                     inc_labelled("service_market_done", {"market": ms.market_id}, 1)
+                    dur_ms = int((_t.perf_counter() - start) * 1000)
+                    inc_labelled("service_market_runtime_ms_sum", {"market": ms.market_id}, dur_ms)
+                    inc_labelled("service_market_runtime_count", {"market": ms.market_id}, 1)
                 except Exception:
                     pass
             except Exception:

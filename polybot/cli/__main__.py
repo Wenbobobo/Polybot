@@ -55,6 +55,7 @@ def main() -> None:
 
     sub.add_parser("metrics", help="Print in-process metrics counters")
     sub.add_parser("metrics-export", help="Print Prometheus text exposition of metrics")
+    sub.add_parser("metrics-reset", help="Reset in-process metrics (testing/diagnostics)")
     p_mserve = sub.add_parser("metrics-serve", help="Serve /metrics over HTTP (local only)")
     p_mserve.add_argument("--host", default="127.0.0.1")
     p_mserve.add_argument("--port", type=int, default=0)
@@ -194,6 +195,9 @@ def main() -> None:
         cmd_metrics_export()
     elif args.cmd == "metrics-serve":
         cmd_metrics_serve(host=args.host, port=args.port)
+    elif args.cmd == "metrics-reset":
+        from .commands import cmd_metrics_reset
+        cmd_metrics_reset()
     elif args.cmd == "migrate-timescale":
         from .commands import cmd_migrate_timescale_print
         cmd_migrate_timescale_print()
@@ -274,7 +278,6 @@ def main() -> None:
             chain_id=args.chain_id,
             timeout_s=args.timeout_s,
             confirm_live=args.confirm_live,
-        )
         )
     elif args.cmd == "relayer-dry-run":
         cmd_relayer_dry_run(

@@ -36,6 +36,7 @@ from polybot.tgbot.agent import BotAgent, BotContext
 from polybot.tgbot.runner import TelegramUpdateRunner
 from polybot.storage.db import parse_db_url
 from polybot.adapters.polymarket.ctf import build_ctf, MergeRequest, SplitRequest
+from polybot.observability.metrics import reset as metrics_reset_fn
 
 
 def init_db(db_url: str):
@@ -176,6 +177,13 @@ def cmd_metrics_export() -> str:
     text = prometheus_export_text()
     print(text, end="")
     return text
+
+
+def cmd_metrics_reset() -> str:
+    metrics_reset_fn()
+    msg = "OK: metrics reset"
+    print(msg)
+    return msg
 
 
 def cmd_migrate_timescale_print() -> str:

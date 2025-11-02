@@ -29,6 +29,9 @@ async def run_orderbook_stream(
         typ = msg.get("type")
         if typ not in ("snapshot", "delta"):
             continue
+        # If a market field exists and doesn't match, ignore this message.
+        if msg.get("market") not in (None, market_id):
+            continue
         ok, reason = validate_message(msg)
         if not ok:
             inc("ingestion_msg_invalid")
