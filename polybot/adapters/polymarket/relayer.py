@@ -158,6 +158,23 @@ class RelayerClient:
             out.append(CancelAck(client_order_id=str(cid), canceled=bool(canceled)))
         return out
 
+    # Optional allowance helpers — forwarded if underlying client exposes them (snake or camel).
+    def approve_usdc(self, amount: float):  # pragma: no cover - exercised via dedicated tests
+        inner = self._client
+        if hasattr(inner, "approve_usdc"):
+            return getattr(inner, "approve_usdc")(amount)
+        if hasattr(inner, "approveUsdc"):
+            return getattr(inner, "approveUsdc")(amount)
+        raise NotImplementedError("approve_usdc not available on underlying client")
+
+    def approve_outcome(self, token_address: str, amount: float):  # pragma: no cover
+        inner = self._client
+        if hasattr(inner, "approve_outcome"):
+            return getattr(inner, "approve_outcome")(token_address, amount)
+        if hasattr(inner, "approveOutcome"):
+            return getattr(inner, "approveOutcome")(token_address, amount)
+        raise NotImplementedError("approve_outcome not available on underlying client")
+
 
 class RetryRelayer:
     """Wrapper that adds retry/backoff around place/cancel operations.
@@ -223,6 +240,10 @@ class RetryRelayer:
                     import time as _t
 
                     _t.sleep(self._retry_sleep_ms / 1000.0)
+
+    def __getattr__(self, name):
+        # Forward unknown attributes/methods (e.g., approve_usdc) to inner
+        return getattr(self._inner, name)
 
 
 def build_relayer(kind: str, **kwargs):
