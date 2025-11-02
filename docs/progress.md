@@ -86,6 +86,9 @@ This file tracks decisions and incremental progress.
   - 执行审计：exec_audit 新增 place_call_ms 与 ack_latency_ms 字段（SQLite/Postgres），Engine 在可用时写入；保持旧 schema 回退兼容。
   - Relayer：对“速率限制”风格错误（429/包含 rate limit 文本）增加 `relayer_rate_limited_total` 计数；RetryRelayer place/cancel 路径均支持分类与退避单测。
   - WS：译器在大快照与字符串化数值下保持兼容，并保留官方元数据字段（market/channel/ts_ms）。
+  - Exec 审计：新增 `request_id` 字段（SQLite/Postgres）；Engine 写入并保持旧列回退插入。
+  - CLI：`status`/`status-summary`/`health` 支持 `--json` 输出；`status-summary` JSON 包含 `quotes_rate_limited` 与 `quotes_cancel_rate_limited`；`status-top` 增加全局 rate_limited/timeout 列；`audit-tail` 便于快速回溯。
+  - WS 重连：正确校验和的分段流在重连下避免多余重同步（指标不增）。
 
 Next (queued)
 - py-clob-client 封装与 dry-run 联调（EOA 签名、拒单/超时/部分成交映射、速率控制/重试），完成后提醒配置钱包切实盘。

@@ -59,6 +59,42 @@ Live Wiring Checklist (for operators)
 
 Assistance Needed (from operator)
 - Provide a dedicated wallet and private key (Polygon) in `config/secrets.local.toml` (never commit), and confirm `chain_id`.
+
+Current State Snapshot (2025-11)
+- Ingestion: robust WS snapshot/delta + resync (first-delta, gap, checksum); reconnect with optional throttled snapshot; translator accepts official-like payloads (l2, data-wrapped, metadata fields) and large snapshots.
+- Storage: SQLite WAL baseline; Postgres DDL present (optional Timescale). Tables include markets/outcomes/events/snapshots/orders/fills/market_status/exec_audit.
+- Execution: idempotency (plan_id + client_order_id); retry wrapper; audit persisted with timings (duration_ms, place_call_ms, ack_latency_ms) and request_id (fallback-safe if columns absent).
+- Relayer: FakeRelayer for safety; real path via PyClob adapter; classification metrics for retries (global and per-market).
+- Strategies: Dutch Book + Spread (inventory-aware, rate/cancel limits, min quote lifetime, tick-size aware).
+- Observability: in-process metrics; Prometheus text exporter; HTTP server with `/metrics`, `/health`, `/status` (JSON of counters); CLI diagnostics (status/status-top/status-summary with JSON options); audit-tail (text/JSON).
+- Tooling: orders-tail (text/JSON), orders-cancel by client_oid; config-dump (redacted JSON); metrics-json.
+- tgbot: offline webhook server + CLI tgbot-serve (whitelist) built on FakeRelayer.
+
+Operator Quickstart (dev)
+- Run tests: `uv sync && uv run pytest -q`.
+- Explore metrics: `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 8000` (GET `/metrics`, `/health`, `/status`).
+- Status & summary: `status --db-url ... [--verbose|--json]`, `status-summary --db-url ... [--json]`, `status-top --json`.
+- Exec audit and orders: `audit-tail --db-url ... [--json]`, `orders-tail --db-url ... [--json]`, `orders-cancel c1,c2 --relayer fake`.
+- Service: `run-service --config config/service.toml [--summary-json-output out.json]`.
+
+Live Wiring Checklist (real relayer)
+- Ensure `py-clob-client` installed and secrets present in `config/secrets.local.toml` (`[relayer] private_key="0x..."`, `dry_run=false`, correct `chain_id`).
+- Preflight: `preflight --config ... [--json]`.
+- Live safety flow: start with `smoke-live` (dry-run call) to validate signer/client; then a guarded `relayer-live-order --confirm-live` at tiny size.
+- Watch metrics: `relayer_rate_limited_total`, `relayer_timeouts_total`; per-market `relayer_rate_limited_events{market}`, `relayer_timeouts_events{market}`.
+- Verify audit: `audit-tail --db-url ...` (check timings, request_id) and DB `orders/fills` as expected.
+
+Priorities (next)
+- Relayer E2E hardening: allowances/timeout/rate-limit behaviors; duplicate plan idempotency verification on real path; consider JSON output for `relayer-live-order`.
+- WS protocol: expand official-shaped reconnect/partial checksum sequences and large bursts; keep translator backward-compatible.
+- Service ops: include per-market relayer event counts in summary; improve graceful teardown and health reporting.
+- Postgres: optional `migrate --apply` verification under psycopg; Timescale optional.
+- Observability & dashboards: consider histogram-like metrics for timings; extend dashboard panels (quotes/latencies/relayer classifications).
+
+Safety & Ops Notes
+- Never commit secrets; rely on TOML files with secrets overlay (gitignored). Keep `dry_run=true` until real paths are validated via smoke tests.
+- Prefer Windows + PowerShell + uv commands already documented in README/commands-reference.
+- Metrics are in-process; tests reset counters when needed (`metrics-reset`, or programmatic `metrics.reset()`).
 - Install `py_clob_client` in the runtime environment and confirm constructor options (chain, timeout) if they differ.
 - Confirm base URLs for CLOB and Gamma per environment (testnet/mainnet).
 - When ready for live: run `preflight --config ...` then a single `relayer-dry-run` before enabling service.

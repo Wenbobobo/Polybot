@@ -15,7 +15,7 @@ Config Guide
   - `[relayer] private_key = "0x..."`, `dry_run = false`, `chain_id = 137`
 
 Core Commands
-- Status: `uv run python -m polybot.cli status --db-url sqlite:///./polybot.db` (add `--verbose` for quotes + timings)
+- Status: `uv run python -m polybot.cli status --db-url sqlite:///./polybot.db` (add `--verbose` for quotes + timings; add `--json` for JSON)
 - Mock WS: `uv run python -m polybot.cli mock-ws --port 9000`
 - Ingest WS: `uv run python -m polybot.cli ingest-ws ws://127.0.0.1:9000 mkt-1 --db-url sqlite:///./polybot.db --max-messages 3`
 - Quoter WS (simulate): `uv run python -m polybot.cli quoter-run-ws ws://127.0.0.1:9000 mkt-1 yes --db-url sqlite:///./polybot.db --max-messages 3 --subscribe`
@@ -26,7 +26,8 @@ Core Commands
   - Validate config before live: `uv run python -m polybot.cli preflight --config config/service.example.toml`
 - Metrics: `uv run python -m polybot.cli metrics`
 - Prometheus Export: `uv run python -m polybot.cli metrics-export`
-- Metrics HTTP Server: `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 0` (exposes `/metrics` and `/health`)
+- Metrics HTTP Server: `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 0` (exposes `/metrics`, `/health`, `/status`)
+- Metrics JSON: `uv run python -m polybot.cli metrics-json`
 - Reset Counters: `uv run python -m polybot.cli metrics-reset` (useful in tests/diagnostics)
 - Grafana Dashboard: import `observability/grafana-dashboard.json` and point it at your Prometheus datasource.
 
@@ -34,7 +35,12 @@ Grafana Quickstart
 - Run the metrics HTTP server locally: `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 8000`
 - Point Prometheus at `http://127.0.0.1:8000/metrics` (scrape job in your prometheus.yml)
 - Import `observability/grafana-dashboard.json` into Grafana and select your Prometheus datasource
-- Status Top (diagnostics): `uv run python -m polybot.cli status-top --db-url sqlite:///./polybot.db --limit 10`
+- Status Top (diagnostics): `uv run python -m polybot.cli status-top --db-url sqlite:///./polybot.db --limit 10 [--json]`
+- Status Summary: `uv run python -m polybot.cli status-summary --db-url sqlite:///./polybot.db` (add `--json`)
+- Audit Tail: `uv run python -m polybot.cli audit-tail --db-url sqlite:///./polybot.db --limit 5`
+- Orders Tail: `uv run python -m polybot.cli orders-tail --db-url sqlite:///./polybot.db --limit 5 [--json]`
+- Orders Cancel: `uv run python -m polybot.cli orders-cancel c1,c2 --db-url sqlite:///./polybot.db --relayer real --private-key 0x...`
+- Config Dump: `uv run python -m polybot.cli config-dump --config config/service.toml`
 - Dutch (replay): `uv run python -m polybot.cli dutch-run-replay recordings/multi.jsonl mkt-1 --db-url sqlite:///./polybot.db --safety-margin-usdc 0.01 --fee-bps 20 --slippage-ticks 1`
 - Relayer Dry Run: `uv run python -m polybot.cli relayer-dry-run mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x... --db-url sqlite:///./polybot.db`
   - Approvals: `relayer-approve-usdc` / `relayer-approve-outcome` (with retries/metrics)

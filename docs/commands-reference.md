@@ -50,11 +50,18 @@ This document lists the CLI commands available for Polybot, grouped by workflow.
   - `uv run python -m polybot.cli metrics-export`
   - `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 8000` (endpoints: `/metrics`, `/health`)
   - `uv run python -m polybot.cli metrics-reset` (clear in-process counters)
+  - `uv run python -m polybot.cli metrics-json` (counters as JSON)
+  - HTTP JSON: GET `/status` from metrics-serve for counters JSON
  - Exec Audit:
-   - `uv run python -m polybot.cli audit-tail --db-url sqlite:///./polybot.db --limit 5`
+  - `uv run python -m polybot.cli audit-tail --db-url sqlite:///./polybot.db --limit 5`
   - Grafana: import `observability/grafana-dashboard.json`
 
-## Database
+## Config & Database
+- Config dump (redacted):
+  - `uv run python -m polybot.cli config-dump --config config/service.toml`
+- Orders:
+  - Tail: `uv run python -m polybot.cli orders-tail --db-url sqlite:///./polybot.db --limit 5 [--json]`
+  - Cancel: `uv run python -m polybot.cli orders-cancel c1,c2 --db-url sqlite:///./polybot.db --relayer real --private-key 0x...`
 - Migrations (Postgres):
   - Print SQL: `uv run python -m polybot.cli migrate --db-url postgresql://user:pass@host:5432/db --print-sql`
   - Apply (requires psycopg): `uv run python -m polybot.cli migrate --db-url postgresql://user:pass@host:5432/db --apply`
