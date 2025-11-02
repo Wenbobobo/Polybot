@@ -64,13 +64,18 @@ This file tracks decisions and incremental progress.
 - Observability：新增 Grafana 仪表板 `observability/grafana-dashboard.json`；`README` 增加 Grafana Quickstart。
 - Relayer：
   - 包装器 `RetryRelayer`（place/cancel 重试 + 退避）；服务层暴露 `[service] relayer_max_retries/relayer_retry_sleep_ms`；
-  - 取消指标：`relayer_cancel_count`、`relayer_cancel_ms_sum`；取消异常计数 `relayer_cancel_errors_total`；
+ - 取消指标：`relayer_cancel_count`、`relayer_cancel_ms_sum`；取消异常计数 `relayer_cancel_errors_total`；
   - 位置错误计数：`relayer_place_errors{market}`；应答指标扩充（accepted/rejected by status）。
 - CLI/状态：`status-top` 增加 `place_errors` 列并按 resync_ratio→rejects→place_errors→cancel限流 排序。
 - Allowance：CLI 计数增加 `relayer_allowance_success{kind}`；RelayerClient 暴露 `approve_usdc/approve_outcome`（snake/camel）。
 - Spread（S4）完善：引入 `min_quote_lifetime_ms`、从 DB 读取 `tick_size` 以驱动 `min_change_ticks`、保留按侧替换窗口与取消限流；`status --verbose` 增加 cancel_rate_limited。
 - Dutch（S3）已具备：多 outcome 汇总、规则哈希守护、费用/滑点/安全边际，稳定 plan_id 并计量 metrics（dutch_orders_placed / dutch_rulehash_changed）。
 - 配置整合：引入单文件 `config/service.example.toml` + 机密覆盖；移除 `config/markets.example.toml` 与 `config/live.example.toml`（不再在文档中引用）。保留 `config/default.toml` 仅用于单元测试，后续将迁移测试后再移除。
+
+- 小强化：
+  - Real relayer 构造支持 `timeout_s` → `timeout` 归一化映射，提升与不同 py‑clob‑client 版本的兼容性（单测覆盖）。
+  - 观测：`metrics-serve` 新增 `/health` 端点（200 ok），便于外部探针与容器健康检查（单测覆盖）。
+  - Service：新增集成测试覆盖任务异常容错与 `service_task_errors{market}` 计数（坏连接不影响其他市场）。
 
 Next (queued)
 - py-clob-client 封装与 dry-run 联调（EOA 签名、拒单/超时/部分成交映射、速率控制/重试），完成后提醒配置钱包切实盘。

@@ -47,7 +47,7 @@ This document lists the CLI commands available for Polybot, grouped by workflow.
 - Metrics:
   - `uv run python -m polybot.cli metrics`
   - `uv run python -m polybot.cli metrics-export`
-  - `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 8000`
+  - `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 8000` (endpoints: `/metrics`, `/health`)
   - Grafana: import `observability/grafana-dashboard.json`
 
 ## Database
@@ -58,4 +58,3 @@ This document lists the CLI commands available for Polybot, grouped by workflow.
 ## Telegram (offline)
 - Simulate updates:
   - `uv run python -m polybot.cli tgbot-run-local updates.jsonl mkt-1 yes --db-url sqlite:///./polybot.db`
-

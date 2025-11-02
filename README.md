@@ -26,7 +26,7 @@ Core Commands
   - Validate config before live: `uv run python -m polybot.cli preflight --config config/service.example.toml`
 - Metrics: `uv run python -m polybot.cli metrics`
 - Prometheus Export: `uv run python -m polybot.cli metrics-export`
-- Metrics HTTP Server: `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 0`
+ - Metrics HTTP Server: `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 0` (exposes `/metrics` and `/health`)
 - Grafana Dashboard: import `observability/grafana-dashboard.json` and point it at your Prometheus datasource.
 
 Grafana Quickstart

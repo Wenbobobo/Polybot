@@ -87,10 +87,13 @@ def cmd_status(db_url: str = ":memory:", verbose: bool = False) -> str:
             ems = get_counter_labelled("engine_execute_plan_ms_sum", {"market": mkt})
             ec = get_counter_labelled("engine_execute_plan_count", {"market": mkt})
             avg_ms = (ems / ec) if ec else 0
+            ack_sum = get_counter_labelled("engine_ack_ms_sum", {"market": mkt})
+            ack_cnt = get_counter_labelled("engine_ack_count", {"market": mkt})
+            ack_avg = (ack_sum / ack_cnt) if ack_cnt else 0
             total_resyncs = gap + csum + firstd
             resync_ratio = (total_resyncs / max(1, applied)) if applied else 0
             lines.append(f"  quotes: placed={qp} canceled={qc} skipped={qs} skipped_same={qss} rate_limited={qrl} cancel_rate_limited={qcrl}")
-            lines.append(f"  orders: placed={op} filled={of} exec_avg_ms={avg_ms:.1f} exec_count={ec} retries={eret}")
+            lines.append(f"  orders: placed={op} filled={of} exec_avg_ms={avg_ms:.1f} exec_count={ec} retries={eret} ack_avg_ms={ack_avg:.1f}")
             lines.append(f"  relayer: acks_accepted={rak_ok} acks_rejected={rak_rej}")
             lines.append(f"  dutch: placed={dplaced} rulehash_changed={drh}")
             lines.append(f"  resyncs: total={total_resyncs} ratio={resync_ratio:.3f}")

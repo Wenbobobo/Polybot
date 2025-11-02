@@ -72,6 +72,13 @@ class ServiceRunner:
                     _aiter_translated_ws(ms.ws_url, max_messages=ms.max_messages, subscribe_message=sub),
                     now_ms,
                 )
+                # mark completion for observability
+                try:
+                    from polybot.observability.metrics import inc_labelled
+
+                    inc_labelled("service_market_done", {"market": ms.market_id}, 1)
+                except Exception:
+                    pass
             except Exception:
                 from polybot.observability.metrics import inc_labelled
 

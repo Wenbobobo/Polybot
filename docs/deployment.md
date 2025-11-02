@@ -77,7 +77,7 @@
 - 计划后续阶段引入指标和仪表板（Prometheus）。
  - 进程内指标：`uv run python -m polybot.cli metrics` 显示计数器（包括按市场标识的值）。
 - Prometheus 暴露文本：`uv run python -m polybot.cli metrics-export` 可用于本地抓取或重定向至文件。
- - 轻量 HTTP 暴露：`uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 0` 在本地提供 `/metrics`。
+ - 轻量 HTTP 暴露：`uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 0` 在本地提供 `/metrics` 与 `/health`。
 
 ## 运行手册与操作提示
 - 数据摄取出现停滞：

@@ -64,6 +64,9 @@ class ExecutionEngine:
                     for mid in set(i.market_id for i in plan.intents):
                         inc_labelled("engine_place_call_ms_sum", {"market": mid}, call_dur_ms)
                         inc_labelled("engine_place_call_count", {"market": mid}, 1)
+                        # ack latency (in this synchronous model equals call duration)
+                        inc_labelled("engine_ack_ms_sum", {"market": mid}, call_dur_ms)
+                        inc_labelled("engine_ack_count", {"market": mid}, 1)
                     break
                 except (TypeError, ValueError, AttributeError):
                     call_start = time.perf_counter()
@@ -72,6 +75,8 @@ class ExecutionEngine:
                     for mid in set(i.market_id for i in plan.intents):
                         inc_labelled("engine_place_call_ms_sum", {"market": mid}, call_dur_ms)
                         inc_labelled("engine_place_call_count", {"market": mid}, 1)
+                        inc_labelled("engine_ack_ms_sum", {"market": mid}, call_dur_ms)
+                        inc_labelled("engine_ack_count", {"market": mid}, 1)
                     break
                 except Exception:
                     attempt += 1
