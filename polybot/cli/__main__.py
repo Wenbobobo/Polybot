@@ -66,6 +66,15 @@ def main() -> None:
     p_ml.add_argument("--db-url", default=":memory:")
     p_ml.add_argument("--limit", type=int, default=10)
     p_ml.add_argument("--json", action="store_true")
+    p_ms = sub.add_parser("markets-search", help="Search markets by title substring from DB")
+    p_ms.add_argument("--db-url", default=":memory:")
+    p_ms.add_argument("--query", required=True)
+    p_ms.add_argument("--limit", type=int, default=10)
+    p_ms.add_argument("--json", action="store_true")
+    p_mshow = sub.add_parser("markets-show", help="Show a single market and all outcomes from DB")
+    p_mshow.add_argument("market_id")
+    p_mshow.add_argument("--db-url", default=":memory:")
+    p_mshow.add_argument("--json", action="store_true")
 
     p_health = sub.add_parser("health", help="Health check: staleness")
     p_health.add_argument("--db-url", default=":memory:")
@@ -197,6 +206,17 @@ def main() -> None:
     p_smoke.add_argument("--private-key", default="")
     p_smoke.add_argument("--chain-id", type=int, default=137)
     p_smoke.add_argument("--timeout-s", type=float, default=10.0)
+    p_smoke.add_argument("--json", action="store_true")
+
+    p_rlc = sub.add_parser("relayer-live-order-config", help="Place a single LIVE order using relayer settings from config (secrets overlay)")
+    p_rlc.add_argument("--config", required=True)
+    p_rlc.add_argument("market_id")
+    p_rlc.add_argument("outcome_id")
+    p_rlc.add_argument("side", choices=["buy", "sell"])
+    p_rlc.add_argument("price", type=float)
+    p_rlc.add_argument("size", type=float)
+    p_rlc.add_argument("--confirm-live", action="store_true")
+    p_rlc.add_argument("--json", action="store_true")
 
     p_cancel = sub.add_parser("orders-cancel", help="Cancel client orders by client_oid")
     p_cancel.add_argument("client_oids", help=",-separated client order IDs (e.g., c1,c2)")
@@ -262,6 +282,19 @@ def main() -> None:
             private_key=args.private_key,
             chain_id=args.chain_id,
             timeout_s=args.timeout_s,
+            as_json=args.json,
+        )
+    elif args.cmd == "relayer-live-order-config":
+        from .commands import cmd_relayer_live_order_from_config
+        cmd_relayer_live_order_from_config(
+            args.config,
+            args.market_id,
+            args.outcome_id,
+            args.side,
+            args.price,
+            args.size,
+            confirm_live=args.confirm_live,
+            as_json=args.json,
         )
     elif args.cmd == "orders-cancel":
         from .commands import cmd_orders_cancel_client_oids
@@ -277,6 +310,12 @@ def main() -> None:
     elif args.cmd == "markets-list":
         from .commands import cmd_markets_list
         cmd_markets_list(db_url=args.db_url, limit=args.limit, as_json=args.json)
+    elif args.cmd == "markets-search":
+        from .commands import cmd_markets_search
+        cmd_markets_search(db_url=args.db_url, query=args.query, limit=args.limit, as_json=args.json)
+    elif args.cmd == "markets-show":
+        from .commands import cmd_markets_show
+        cmd_markets_show(db_url=args.db_url, market_id=args.market_id, as_json=args.json)
     elif args.cmd == "status-top":
         cmd_status_top(db_url=args.db_url, limit=args.limit, as_json=args.json)
     elif args.cmd == "status-summary":

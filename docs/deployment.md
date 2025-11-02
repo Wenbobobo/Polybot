@@ -22,7 +22,7 @@
     - 包含 `[service]`、`[service.spread]`、`[relayer]` 与 `[[market]]` 等节。
   - 机密覆盖（gitignored）：与主配置同目录的 `secrets.local.toml`
     - 覆盖 `[relayer]` 字段（例如 `private_key`、`dry_run=false`）。
-- 说明：历史上的 `config/default.toml` 保留用于底层加载器示例与测试，不用于服务运行。
+- 说明：历史上的多份示例配置（如 `config/default.toml` 等）已合并并移除；仅保留 `service.toml` 与 `secrets.local.toml` 组合（示例见 `service.example.toml` 和 `secrets.local.toml.example`）。
 
 ### 真实 Relayer 依赖（可选）
 - 如果你准备联调真实 relayer（仍然建议先 `dry_run=true`），请安装 `py-clob-client`：

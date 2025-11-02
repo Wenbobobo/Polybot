@@ -620,7 +620,7 @@ def cmd_conversions_split(market_id: str, yes_id: str, no_id: str, usdc_amount: 
     return out
 
 
-def cmd_smoke_live(config_path: str, market_id: str, outcome_id: str, side: str, price: float, size: float, base_url: str, private_key: str, chain_id: int = 137, timeout_s: float = 10.0) -> str:
+def cmd_smoke_live(config_path: str, market_id: str, outcome_id: str, side: str, price: float, size: float, base_url: str, private_key: str, chain_id: int = 137, timeout_s: float = 10.0, as_json: bool = False) -> str:
     pre = cmd_preflight(config_path)
     if not pre.startswith("OK:"):
         return pre
@@ -630,6 +630,12 @@ def cmd_smoke_live(config_path: str, market_id: str, outcome_id: str, side: str,
 
     rl = get_counter("relayer_rate_limited_total")
     to = get_counter("relayer_timeouts_total")
+    if as_json:
+        import json as _json
+        body = {"preflight": pre, "result": res, "rate_limited_total": rl, "timeouts_total": to}
+        out = _json.dumps(body)
+        print(out)
+        return out
     out = f"{pre}\n{res}\nmetrics: rate_limited={rl} timeouts={to}"
     print(out)
     return out
@@ -1125,6 +1131,113 @@ def cmd_tgbot_run_local(updates_file: str, market_id: str, outcome_yes_id: str, 
     for e in read_jsonl(updates_file):
         outputs.append(runner.handle_update(e))
     out = "\n".join(outputs)
+    print(out)
+    return out
+
+
+def cmd_relayer_live_order_from_config(
+    config_path: str,
+    market_id: str,
+    outcome_id: str,
+    side: str,
+    price: float,
+    size: float,
+    *,
+    confirm_live: bool = False,
+    as_json: bool = False,
+) -> str:
+    """Convenience wrapper to place a live order using credentials from service config + secrets overlay.
+
+    Reads relayer settings from TOML (including secrets overlay), then delegates to cmd_relayer_live_order.
+    """
+    cfg = load_service_config(config_path)
+    return cmd_relayer_live_order(
+        market_id=market_id,
+        outcome_id=outcome_id,
+        side=side,
+        price=price,
+        size=size,
+        base_url=cfg.relayer_base_url,
+        private_key=cfg.relayer_private_key,
+        chain_id=cfg.relayer_chain_id,
+        timeout_s=cfg.relayer_timeout_s,
+        confirm_live=confirm_live,
+        as_json=as_json,
+    )
+
+
+def cmd_markets_search(db_url: str, query: str, limit: int = 10, as_json: bool = False) -> str:
+    """Search markets by title substring (case-insensitive) from DB.
+
+    Returns market_id, title, status, and outcomes summary for quick targeting.
+    """
+    con = connect_sqlite(db_url)
+    q = f"%{query.lower()}%"
+    rows = con.execute(
+        "SELECT m.market_id, m.title, m.status, COALESCE(s.last_update_ts_ms, 0) as updated "
+        "FROM markets m LEFT JOIN market_status s ON m.market_id = s.market_id "
+        "WHERE lower(m.title) LIKE ? ORDER BY updated DESC, m.market_id LIMIT ?",
+        (q, max(1, int(limit))),
+    ).fetchall()
+    items = []
+    for mid, title, status, updated in rows:
+        oc = con.execute("SELECT COUNT(1) FROM outcomes WHERE market_id = ?", (mid,)).fetchone()[0]
+        items.append({
+            "market_id": mid,
+            "title": title,
+            "status": status,
+            "last_update_ts_ms": int(updated or 0),
+            "outcomes_count": int(oc or 0),
+        })
+    if as_json:
+        out = _json.dumps(items)
+        print(out)
+        return out
+    lines = ["market_id title status last_update_ms outcomes_count"]
+    for it in items:
+        lines.append(f"{it['market_id']} {it['title']} {it['status']} {it['last_update_ts_ms']} {it['outcomes_count']}")
+    out = "\n".join(lines)
+    print(out)
+    return out
+
+
+def cmd_markets_show(db_url: str, market_id: str, as_json: bool = False) -> str:
+    """Show a single market with all outcomes from DB."""
+    con = connect_sqlite(db_url)
+    row = con.execute(
+        "SELECT market_id, title, status FROM markets WHERE market_id = ?",
+        (market_id,),
+    ).fetchone()
+    if not row:
+        out = f"market not found: {market_id}"
+        print(out)
+        return out
+    outs = con.execute(
+        "SELECT outcome_id, name, tick_size, min_size FROM outcomes WHERE market_id = ? ORDER BY outcome_id",
+        (market_id,),
+    ).fetchall()
+    item = {
+        "market_id": row[0],
+        "title": row[1],
+        "status": row[2],
+        "outcomes": [
+            {
+                "outcome_id": o[0],
+                "name": o[1],
+                "tick_size": float(o[2] or 0.0),
+                "min_size": float(o[3] or 0.0),
+            }
+            for o in outs
+        ],
+    }
+    if as_json:
+        out = _json.dumps(item)
+        print(out)
+        return out
+    lines = [f"{item['market_id']} {item['title']} {item['status']}"]
+    for o in item["outcomes"]:
+        lines.append(f"  - {o['outcome_id']} {o['name']} tick={o['tick_size']} min={o['min_size']}")
+    out = "\n".join(lines)
     print(out)
     return out
 

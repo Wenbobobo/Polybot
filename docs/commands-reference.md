@@ -7,8 +7,12 @@ This document lists the CLI commands available for Polybot, grouped by workflow.
   - `uv run python -m polybot.cli preflight --config config/service.toml`
 - Smoke live (preflight + one dry-run order):
   - `uv run python -m polybot.cli smoke-live --config config/service.toml mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x...`
+  - JSON: append `--json`
 - Live order (requires `--confirm-live`):
   - `uv run python -m polybot.cli relayer-live-order mkt-1 yes buy 0.01 0.01 --base-url https://clob.polymarket.com --private-key 0x... --confirm-live`
+  - JSON output: append `--as-json` to get `{"placed":N,"accepted":M,"statuses":{...}}`
+  - From config (reads secrets overlay):
+    - `uv run python -m polybot.cli relayer-live-order-config --config config/service.toml mkt-1 yes buy 0.01 0.01 --confirm-live --json`
 
 ## Service
 - Run service from config:
@@ -23,6 +27,11 @@ This document lists the CLI commands available for Polybot, grouped by workflow.
   - `uv run python -m polybot.cli record-ws ws://127.0.0.1:9000 out.jsonl --max-messages 3 --subscribe`
 - Replay JSONL:
   - `uv run python -m polybot.cli replay recordings/sample.jsonl mkt-1 --db-url sqlite:///./polybot.db`
+- Refresh markets from Gamma and list:
+  - `uv run python -m polybot.cli refresh-markets https://gamma-api.polymarket.com --db-url sqlite:///./polybot.db`
+  - `uv run python -m polybot.cli markets-list --db-url sqlite:///./polybot.db --limit 10 --json`
+  - Search by title: `uv run python -m polybot.cli markets-search --db-url sqlite:///./polybot.db --query hype --json`
+  - Show one market: `uv run python -m polybot.cli markets-show <market_id> --db-url sqlite:///./polybot.db --json`
 
 ## Strategies
 - Spread quoter (WS simulate):
@@ -42,6 +51,7 @@ This document lists the CLI commands available for Polybot, grouped by workflow.
 ## Observability
 - Status & Health:
   - `uv run python -m polybot.cli status --db-url sqlite:///./polybot.db [--verbose]`
+  - JSON: `uv run python -m polybot.cli status --db-url sqlite:///./polybot.db --json [--verbose]` (verbose JSON includes relayer per-market events)
   - `uv run python -m polybot.cli status-top --db-url sqlite:///./polybot.db --limit 10`
   - `uv run python -m polybot.cli status-summary --db-url sqlite:///./polybot.db`
   - `uv run python -m polybot.cli health --db-url sqlite:///./polybot.db --staleness-ms 30000`

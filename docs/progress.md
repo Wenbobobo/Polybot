@@ -90,6 +90,12 @@ This file tracks decisions and incremental progress.
   - CLI：`status`/`status-summary`/`health` 支持 `--json` 输出；`status-summary` JSON 包含 `quotes_rate_limited` 与 `quotes_cancel_rate_limited`；`status-top` 增加全局 rate_limited/timeout 列；`audit-tail` 便于快速回溯。
   - WS 重连：正确校验和的分段流在重连下避免多余重同步（指标不增）。
 
+2025-11-02 (cont.)
+- CLI 改进：
+  - `status --json --verbose` 现在在 JSON 中包含每市场的 `relayer_rate_limited_events` 与 `relayer_timeouts_events` 指标，便于仪表板与自动化诊断。
+  - `relayer-live-order` 新增 `as_json` 输出选项（在 `--confirm-live` 生效前提下），返回 `{"placed":N,"accepted":M,"statuses":{...}}`，方便脚本化联调与回归。
+- 测试：新增两项单测覆盖上述行为。
+
 Next (queued)
 - py-clob-client 封装与 dry-run 联调（EOA 签名、拒单/超时/部分成交映射、速率控制/重试），完成后提醒配置钱包切实盘。
 - S3 回放覆盖：临界边际、复杂 outcomes、规则变更大样本；CLI verbose 输出净边际分解（fee/slip/safety）。

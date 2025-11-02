@@ -131,6 +131,10 @@ Key Commands
 - Relayer: `relayer-dry-run`（真 relayer 干跑）
 - Bot (offline): `tgbot-run-local`（/status、/buy、/sell）
 
+JSON Outputs
+- `status --json --verbose` 包含每市场的重同步比率、报价限流计数，以及新增的 `relayer_rate_limited_events` 与 `relayer_timeouts_events` 用于可视化与报警。
+- `relayer-live-order` 支持 `as_json`（需 `--confirm-live`），用于自动化联调/回归测试（返回下单与状态分布统计）。
+
 Context Compression Tips
 - 若对话上下文受限，请优先参考：`docs/roadmap.md`、`docs/technical-plan.md`、`docs/handoff.md`、`docs/progress.md` 与 `README.md`；
 - 快速起步命令见 README；运维排障见 Runbook；验收流见 acceptance-walkthrough。
