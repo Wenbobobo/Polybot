@@ -43,11 +43,15 @@ This document lists the CLI commands available for Polybot, grouped by workflow.
 - Status & Health:
   - `uv run python -m polybot.cli status --db-url sqlite:///./polybot.db [--verbose]`
   - `uv run python -m polybot.cli status-top --db-url sqlite:///./polybot.db --limit 10`
+  - `uv run python -m polybot.cli status-summary --db-url sqlite:///./polybot.db`
   - `uv run python -m polybot.cli health --db-url sqlite:///./polybot.db --staleness-ms 30000`
 - Metrics:
   - `uv run python -m polybot.cli metrics`
   - `uv run python -m polybot.cli metrics-export`
   - `uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 8000` (endpoints: `/metrics`, `/health`)
+  - `uv run python -m polybot.cli metrics-reset` (clear in-process counters)
+ - Exec Audit:
+   - `uv run python -m polybot.cli audit-tail --db-url sqlite:///./polybot.db --limit 5`
   - Grafana: import `observability/grafana-dashboard.json`
 
 ## Database
@@ -58,3 +62,5 @@ This document lists the CLI commands available for Polybot, grouped by workflow.
 ## Telegram (offline)
 - Simulate updates:
   - `uv run python -m polybot.cli tgbot-run-local updates.jsonl mkt-1 yes --db-url sqlite:///./polybot.db`
+ - Serve webhook (offline engine, whitelist by IDs):
+   - `uv run python -m polybot.cli tgbot-serve --host 127.0.0.1 --port 8001 --secret /tg --allowed 123456789 --market-id mkt-1 --outcome-yes-id yes`

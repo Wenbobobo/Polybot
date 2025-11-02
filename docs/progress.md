@@ -76,6 +76,16 @@ This file tracks decisions and incremental progress.
   - Real relayer 构造支持 `timeout_s` → `timeout` 归一化映射，提升与不同 py‑clob‑client 版本的兼容性（单测覆盖）。
   - 观测：`metrics-serve` 新增 `/health` 端点（200 ok），便于外部探针与容器健康检查（单测覆盖）。
   - Service：新增集成测试覆盖任务异常容错与 `service_task_errors{market}` 计数（坏连接不影响其他市场）。
+  - Engine：新增 `engine_ack_ms_sum/_count`（per‑market），`status --verbose` 输出 `ack_avg_ms`。
+  - Ingestion：`run_orderbook_stream` 支持按消息 `market` 字段过滤（仅处理目标市场），补充集成测试。
+  - CLI：`status-top` 排序与列验证单测；Relayer allowances 命令重试/退避路径单测，`relayer_place_errors{market}` 异常计数单测。
+  - Runner：长批量校验：连续正确 checksum 的增量流无重同步（集成测试）；取消重试 backoff 的休眠参数传递验证；服务每市场运行时长指标 `service_market_runtime_ms_sum/_count`。
+  - Ingestion 重连：跨重连的 checksum 不匹配会触发受限重同步（指标验证），避免频繁拉取（节流已测）。
+  - CLI：新增 `metrics-reset` 命令，用于测试/诊断时清空进程内计数器。
+  - tgbot（S7 初版铺垫）：新增 webhook 服务器（HTTP /tg），按用户ID白名单拦截，请求体直接转发至 BotAgent；提供 `tgbot-serve` CLI（离线引擎）。
+  - 执行审计：exec_audit 新增 place_call_ms 与 ack_latency_ms 字段（SQLite/Postgres），Engine 在可用时写入；保持旧 schema 回退兼容。
+  - Relayer：对“速率限制”风格错误（429/包含 rate limit 文本）增加 `relayer_rate_limited_total` 计数；RetryRelayer place/cancel 路径均支持分类与退避单测。
+  - WS：译器在大快照与字符串化数值下保持兼容，并保留官方元数据字段（market/channel/ts_ms）。
 
 Next (queued)
 - py-clob-client 封装与 dry-run 联调（EOA 签名、拒单/超时/部分成交映射、速率控制/重试），完成后提醒配置钱包切实盘。
