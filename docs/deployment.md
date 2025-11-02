@@ -7,6 +7,7 @@
 - Python 版本：3.12（uv 将自动管理虚拟环境）
 - PowerShell
 - uv 包管理器
+ - （可选，真实 relayer）py-clob-client：仅在你要联调真实 relayer（仍可 dry_run）时安装。
 
 ## 仓库设置
 1. 克隆仓库并在项目根目录中打开 PowerShell。
@@ -22,6 +23,13 @@
   - 机密覆盖（gitignored）：与主配置同目录的 `secrets.local.toml`
     - 覆盖 `[relayer]` 字段（例如 `private_key`、`dry_run=false`）。
 - 说明：历史上的 `config/default.toml` 保留用于底层加载器示例与测试，不用于服务运行。
+
+### 真实 Relayer 依赖（可选）
+- 如果你准备联调真实 relayer（仍然建议先 `dry_run=true`），请安装 `py-clob-client`：
+  - 使用 uv：`uv add py-clob-client`
+  - 或者：`uv pip install py-clob-client`
+- 在 `config/service.toml` 中设置：`[relayer] type = "real"`，并在 `secrets.local.toml` 中提供 `private_key`（永远不要提交密钥）。
+- 运行前先执行 `preflight` 与 `smoke-live` 做一次干跑联调；若账户无余额，保持 `dry_run=true` 即可验证签名与客户端线路是否通畅。
 
 ## 本地运行
 ### 回放已记录事件
@@ -122,8 +130,8 @@
 - 快速诊断：`uv run python -m polybot.cli status-top --db-url sqlite:///./polybot.db --limit 10`
 - 实盘干跑（需安装/配置 real relayer）：
   - `uv run python -m polybot.cli relayer-dry-run mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x... --db-url sqlite:///./polybot.db`
-- 一键烟雾测试（Preflight + Dry-run）：
-  - `uv run python -m polybot.cli smoke-live --config config/service.example.toml mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x...`
+  - 一键烟雾测试（Preflight + Dry-run）：
+    - `uv run python -m polybot.cli smoke-live --config config/service.example.toml mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x...`
 - tgbot 离线命令回放：
   - 准备 JSONL（每行一个 update，如 `{ "message": { "text": "/help" } }`）
   - `uv run python -m polybot.cli tgbot-run-local updates.jsonl mkt-1 yes --db-url sqlite:///./polybot.db`

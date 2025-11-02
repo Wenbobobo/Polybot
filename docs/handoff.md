@@ -44,11 +44,18 @@ Relayer / Wallet & Secrets
   - 完成 USDC 与 outcome token 授权（allowance）；目前提供占位 CLI：`relayer-approve-usdc` 与 `relayer-approve-outcome`（在未接入真实客户端时输出友好提示）。
   - 规则/市场风险过筛（避免 Other；核对 rule_hash）；
   - 合理的限速/重试参数，避免自我限流或风控触发。
+  - 安装 `py-clob-client`：使用 uv 安装（`uv add py-clob-client`），或 `uv pip install py-clob-client`；保持 `dry_run=true` 进行首次联调。
 
 Configuration Model (Consolidated)
 - Use a single service config TOML (e.g., `config/service.example.toml`) containing `[service]`, `[service.spread]`, `[relayer]`, and `[[market]]` sections.
 - Place a `secrets.local.toml` (gitignored) next to it to overlay `[relayer]` fields like `private_key` and `dry_run`.
 - `run-service --config <path>` and `preflight/smoke-live` all read the same service config and apply the secrets overlay automatically.
+
+Live Wiring Checklist (for operators)
+- 安装 `py-clob-client` 并确认版本；
+- 更新 `secrets.local.toml`（Polygon 私钥，`dry_run=true` 初次）；
+- `preflight --config ...` → `smoke-live`（dry-run）→ `status --verbose` 与 Grafana 仪表板观察；
+- 确认后再将 `dry_run=false`，充值 USDC 并执行最小额度订单（严格监控风控与指标）。
 
 Assistance Needed (from operator)
 - Provide a dedicated wallet and private key (Polygon) in `config/secrets.local.toml` (never commit), and confirm `chain_id`.

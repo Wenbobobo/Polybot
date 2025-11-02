@@ -58,6 +58,16 @@ This file tracks decisions and incremental progress.
 - PyClob 适配器：支持转发 `approve_usdc` 与 `approve_outcome` 至底层客户端（若提供）。
 - Postgres：新增 Timescale 可选迁移脚本 `migrations/postgres/010_timescale.sql` 与单测覆盖；增加带 stub psycopg 的 `--apply` 烟雾测试。
 - 订单簿：添加大快照用例以验证装配与最佳价提取在大数组下的稳健性。
+
+2025-11-02
+- Config 整合：仅保留 `config/service.example.toml` 与 `config/secrets.local.toml.example`；删除 `config/default.toml`、`config/markets.example.toml`、`config/live.example.toml`，测试迁移至临时配置文件。
+- Observability：新增 Grafana 仪表板 `observability/grafana-dashboard.json`；`README` 增加 Grafana Quickstart。
+- Relayer：
+  - 包装器 `RetryRelayer`（place/cancel 重试 + 退避）；服务层暴露 `[service] relayer_max_retries/relayer_retry_sleep_ms`；
+  - 取消指标：`relayer_cancel_count`、`relayer_cancel_ms_sum`；取消异常计数 `relayer_cancel_errors_total`；
+  - 位置错误计数：`relayer_place_errors{market}`；应答指标扩充（accepted/rejected by status）。
+- CLI/状态：`status-top` 增加 `place_errors` 列并按 resync_ratio→rejects→place_errors→cancel限流 排序。
+- Allowance：CLI 计数增加 `relayer_allowance_success{kind}`；RelayerClient 暴露 `approve_usdc/approve_outcome`（snake/camel）。
 - Spread（S4）完善：引入 `min_quote_lifetime_ms`、从 DB 读取 `tick_size` 以驱动 `min_change_ticks`、保留按侧替换窗口与取消限流；`status --verbose` 增加 cancel_rate_limited。
 - Dutch（S3）已具备：多 outcome 汇总、规则哈希守护、费用/滑点/安全边际，稳定 plan_id 并计量 metrics（dutch_orders_placed / dutch_rulehash_changed）。
 - 配置整合：引入单文件 `config/service.example.toml` + 机密覆盖；移除 `config/markets.example.toml` 与 `config/live.example.toml`（不再在文档中引用）。保留 `config/default.toml` 仅用于单元测试，后续将迁移测试后再移除。
@@ -81,3 +91,4 @@ Next Steps
 - Expand SpreadParams tunables and batch cancel/replace logic; ensure tick-size-aware min_change thresholds.
 - Extend CLI status --verbose with resync ratios and cancel rate-limit events; add quick "top offenders" view.
 - S5 Conversions（预研完成）：新增 CTF 接口占位（merge/split）与简单的转换规划器（should_merge/should_split），含单测；暂不接入服务流，后续按真实客户端落地与费用模型细化。
+# Progress Log
