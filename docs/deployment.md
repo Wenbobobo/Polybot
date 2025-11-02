@@ -132,6 +132,8 @@
   - `uv run python -m polybot.cli relayer-dry-run mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x... --db-url sqlite:///./polybot.db`
   - 一键烟雾测试（Preflight + Dry-run）：
     - `uv run python -m polybot.cli smoke-live --config config/service.example.toml mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x...`
+  - 最小实盘测试（需 `--confirm-live` 严格确认）：
+    - `uv run python -m polybot.cli relayer-live-order mkt-1 yes buy 0.01 0.01 --base-url https://clob.polymarket.com --private-key 0x... --confirm-live`
 - tgbot 离线命令回放：
   - 准备 JSONL（每行一个 update，如 `{ "message": { "text": "/help" } }`）
   - `uv run python -m polybot.cli tgbot-run-local updates.jsonl mkt-1 yes --db-url sqlite:///./polybot.db`

@@ -18,10 +18,10 @@ max_inventory = 100.0
 rebalance_ratio = 0.5
 
 [relayer]
-type = "fake"                 # set to "real" to use real relayer
+type = "real"                 # default to real relayer (safer flows still exist)
 base_url = "https://clob.polymarket.com"
-dry_run = true                 # secrets overlay can override
-private_key = ""               # leave empty; override in secrets.local.toml
+dry_run = false               # set true for dry-run; can be overridden by secrets overlay
+private_key = ""              # leave empty; override in secrets.local.toml
 chain_id = 137
 timeout_s = 10.0
 
@@ -46,4 +46,3 @@ max_messages = 100
 #[market.spread]
 #edge = 0.03
 #size = 5.0
-

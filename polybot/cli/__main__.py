@@ -21,6 +21,7 @@ from .commands import (
     cmd_tgbot_run_local,
     cmd_relayer_approve_usdc,
     cmd_relayer_approve_outcome,
+    cmd_relayer_live_order,
 )
 from polybot.cli.commands import cmd_run_service_from_config_async
 
@@ -136,6 +137,18 @@ def main() -> None:
     p_aout.add_argument("--token", required=True)
     p_aout.add_argument("--amount", type=float, required=True)
 
+    p_rlive = sub.add_parser("relayer-live-order", help="Place a single LIVE order (requires --confirm-live)")
+    p_rlive.add_argument("market_id")
+    p_rlive.add_argument("outcome_id")
+    p_rlive.add_argument("side", choices=["buy", "sell"])
+    p_rlive.add_argument("price", type=float)
+    p_rlive.add_argument("size", type=float)
+    p_rlive.add_argument("--base-url", default="https://clob.polymarket.com")
+    p_rlive.add_argument("--private-key", default="")
+    p_rlive.add_argument("--chain-id", type=int, default=137)
+    p_rlive.add_argument("--timeout-s", type=float, default=10.0)
+    p_rlive.add_argument("--confirm-live", action="store_true")
+
     p_merge = sub.add_parser("conversions-merge", help="Simulate CTF merge (YES/NO -> USDC) using fake or real CTF")
     p_merge.add_argument("market_id")
     p_merge.add_argument("yes_id")
@@ -249,6 +262,19 @@ def main() -> None:
         cmd_relayer_approve_usdc(base_url=args.base_url, private_key=args.private_key, amount=args.amount)
     elif args.cmd == "relayer-approve-outcome":
         cmd_relayer_approve_outcome(base_url=args.base_url, private_key=args.private_key, token_address=args.token, amount=args.amount)
+    elif args.cmd == "relayer-live-order":
+        cmd_relayer_live_order(
+            args.market_id,
+            args.outcome_id,
+            args.side,
+            args.price,
+            args.size,
+            base_url=args.base_url,
+            private_key=args.private_key,
+            chain_id=args.chain_id,
+            timeout_s=args.timeout_s,
+            confirm_live=args.confirm_live,
+        )
         )
     elif args.cmd == "relayer-dry-run":
         cmd_relayer_dry_run(

@@ -19,12 +19,10 @@ Core Commands
 - Mock WS: `uv run python -m polybot.cli mock-ws --port 9000`
 - Ingest WS: `uv run python -m polybot.cli ingest-ws ws://127.0.0.1:9000 mkt-1 --db-url sqlite:///./polybot.db --max-messages 3`
 - Quoter WS (simulate): `uv run python -m polybot.cli quoter-run-ws ws://127.0.0.1:9000 mkt-1 yes --db-url sqlite:///./polybot.db --max-messages 3 --subscribe`
-- Record WS: `uv run python -m polybot.cli record-ws ws://127.0.0.1:9000 recordings/out.jsonl --max-messages 3 --subscribe`
-- Quoter Replay: `uv run python -m polybot.cli quoter-run-replay recordings/sample.jsonl mkt-1 yes --db-url sqlite:///./polybot.db`
 - Refresh Markets (Gamma): `uv run python -m polybot.cli refresh-markets https://gamma-api.polymarket.com --db-url sqlite:///./polybot.db`
 - Run Service: `uv run python -m polybot.cli run-service --config config/service.example.toml`
-  - Use `[relayer].type = "fake"|"real"` in the TOML; `real` requires py-clob-client and a private key via secrets overlay.
-  - Retry controls: `[service] relayer_max_retries`, `relayer_retry_sleep_ms`; engine-level: `engine_max_retries`, `engine_retry_sleep_ms`.
+  - `[relayer].type = "fake"|"real"`; real requires py-clob-client + secrets overlay private key.
+  - Retry controls: `[service] relayer_max_retries`, `relayer_retry_sleep_ms`; engine: `engine_max_retries`, `engine_retry_sleep_ms`.
   - Validate config before live: `uv run python -m polybot.cli preflight --config config/service.example.toml`
 - Metrics: `uv run python -m polybot.cli metrics`
 - Prometheus Export: `uv run python -m polybot.cli metrics-export`
@@ -38,9 +36,10 @@ Grafana Quickstart
 - Status Top (diagnostics): `uv run python -m polybot.cli status-top --db-url sqlite:///./polybot.db --limit 10`
 - Dutch (replay): `uv run python -m polybot.cli dutch-run-replay recordings/multi.jsonl mkt-1 --db-url sqlite:///./polybot.db --safety-margin-usdc 0.01 --fee-bps 20 --slippage-ticks 1`
 - Relayer Dry Run: `uv run python -m polybot.cli relayer-dry-run mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x... --db-url sqlite:///./polybot.db`
-  - (Prep) Allowances stubs: `relayer-approve-usdc` / `relayer-approve-outcome` print friendly messages until the real client is integrated.
-  - Preflight config checks before live: `uv run python -m polybot.cli preflight --config config/service.example.toml`
-  - Live smoke check (preflight + dry-run): `uv run python -m polybot.cli smoke-live --config config/service.example.toml mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x...`
+  - Approvals: `relayer-approve-usdc` / `relayer-approve-outcome` (with retries/metrics)
+  - Preflight config: `uv run python -m polybot.cli preflight --config config/service.example.toml`
+  - Live smoke: `uv run python -m polybot.cli smoke-live --config config/service.example.toml mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x...`
+  - Live order (guarded): `uv run python -m polybot.cli relayer-live-order ... --confirm-live`
 - Telegram (offline runner): `uv run python -m polybot.cli tgbot-run-local updates.jsonl mkt-1 yes --db-url sqlite:///./polybot.db`
 - Migrations: `uv run python -m polybot.cli migrate --db-url postgresql://user:pass@host:5432/db --print-sql` (or `--apply` if psycopg installed)
 - DB Migrations: `uv run python -m polybot.cli migrate --db-url postgresql://user:pass@host:5432/db --print-sql`
@@ -51,6 +50,7 @@ Docs
 - Technical Plan: `docs/technical-plan.md`
 - Roadmap: `docs/roadmap.md`
 - Deployment: `docs/deployment.md`
+- Commands Reference: `docs/commands-reference.md`
 - Runbook: `docs/runbook.md`
 - Acceptance: `docs/acceptance-checklist.md`, `docs/acceptance-walkthrough.md`
 

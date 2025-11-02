@@ -656,6 +656,59 @@ def cmd_relayer_approve_outcome(base_url: str, private_key: str, token_address: 
             _t.sleep(backoff_ms / 1000.0)
 
 
+def cmd_relayer_live_order(
+    market_id: str,
+    outcome_id: str,
+    side: str,
+    price: float,
+    size: float,
+    *,
+    base_url: str,
+    private_key: str,
+    chain_id: int = 137,
+    timeout_s: float = 10.0,
+    confirm_live: bool = False,
+) -> str:
+    """Place a single LIVE order via real relayer.
+
+    Safety guard: requires confirm_live=True. Uses a small, explicit call path and prints a concise summary.
+    """
+    setup_logging()
+    if not confirm_live:
+        msg = "live order blocked: add --confirm-live to proceed"
+        print(msg)
+        return msg
+    try:
+        rel = build_relayer(
+            "real",
+            base_url=base_url,
+            private_key=private_key,
+            dry_run=False,
+            chain_id=chain_id,
+            timeout_s=timeout_s,
+        )
+    except Exception as e:  # noqa: BLE001
+        msg = f"relayer unavailable: {e}"
+        print(msg)
+        return msg
+    from polybot.exec.planning import ExecutionPlan, OrderIntent
+    # In-memory DB for audit in this CLI path
+    con = init_db(":memory:")
+    from polybot.exec.engine import ExecutionEngine
+
+    engine = ExecutionEngine(rel, audit_db=con)
+    plan = ExecutionPlan(
+        intents=[OrderIntent(market_id=market_id, outcome_id=outcome_id, side=side, price=price, size=size, tif="IOC")],
+        expected_profit=0.0,
+        rationale="live_single",
+    )
+    res = engine.execute_plan(plan)
+    accepted = sum(1 for a in res.acks if a.accepted)
+    out = f"live placed={len(res.acks)} accepted={accepted}"
+    print(out)
+    return out
+
+
 def cmd_tgbot_run_local(updates_file: str, market_id: str, outcome_yes_id: str, db_url: str = ":memory:") -> str:
     setup_logging()
     con = init_db(db_url)
