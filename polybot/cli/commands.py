@@ -56,14 +56,44 @@ def cmd_replay(file: str, market_id: str, db_url: str = ":memory:") -> None:
         ing.process(event)
 
 
-def cmd_status(db_url: str = ":memory:", verbose: bool = False) -> str:
+def cmd_status(db_url: str = ":memory:", verbose: bool = False, as_json: bool = False) -> str:
     """Return a human-readable status summary string for markets in DB."""
     con = connect_sqlite(db_url)
     rows = con.execute(
         "SELECT market_id, last_seq, last_update_ts_ms, snapshots, deltas FROM market_status ORDER BY market_id"
     ).fetchall()
     if not rows:
-        return "No market status available."
+        out = "No market status available."
+        print(out)
+        return out
+    if as_json:
+        import json as _json
+        items = []
+        for r in rows:
+            mkt = r[0]
+            applied = get_counter_labelled("ingestion_msg_applied", {"market": mkt})
+            invalid = get_counter_labelled("ingestion_msg_invalid", {"market": mkt})
+            gap = get_counter_labelled("ingestion_resync_gap", {"market": mkt})
+            csum = get_counter_labelled("ingestion_resync_checksum", {"market": mkt})
+            firstd = get_counter_labelled("ingestion_resync_first_delta", {"market": mkt})
+            item = {
+                "market_id": mkt,
+                "last_seq": r[1],
+                "last_update_ts_ms": r[2],
+                "snapshots": r[3],
+                "deltas": r[4],
+                "applied": applied,
+                "invalid": invalid,
+                "resync_gap": gap,
+                "resync_checksum": csum,
+                "resync_first_delta": firstd,
+            }
+            if verbose:
+                item["quotes_placed"] = get_counter_labelled("quotes_placed", {"market": mkt})
+            items.append(item)
+        out = _json.dumps(items)
+        print(out)
+        return out
     lines = ["market_id last_seq last_update_ms snapshots deltas applied invalid resync_gap resync_checksum resync_first_delta"]
     for r in rows:
         mkt = r[0]
@@ -93,11 +123,15 @@ def cmd_status(db_url: str = ":memory:", verbose: bool = False) -> str:
             ack_sum = get_counter_labelled("engine_ack_ms_sum", {"market": mkt})
             ack_cnt = get_counter_labelled("engine_ack_count", {"market": mkt})
             ack_avg = (ack_sum / ack_cnt) if ack_cnt else 0
+            # global relayer limits/timeouts are process-wide; include as context
+            from polybot.observability.metrics import get_counter
+            rl = get_counter("relayer_rate_limited_total")
+            to = get_counter("relayer_timeouts_total")
             total_resyncs = gap + csum + firstd
             resync_ratio = (total_resyncs / max(1, applied)) if applied else 0
             lines.append(f"  quotes: placed={qp} canceled={qc} skipped={qs} skipped_same={qss} rate_limited={qrl} cancel_rate_limited={qcrl}")
             lines.append(f"  orders: placed={op} filled={of} exec_avg_ms={avg_ms:.1f} exec_count={ec} retries={eret} ack_avg_ms={ack_avg:.1f}")
-            lines.append(f"  relayer: acks_accepted={rak_ok} acks_rejected={rak_rej}")
+            lines.append(f"  relayer: acks_accepted={rak_ok} acks_rejected={rak_rej} rate_limited_total={rl} timeouts_total={to}")
             lines.append(f"  dutch: placed={dplaced} rulehash_changed={drh}")
             lines.append(f"  resyncs: total={total_resyncs} ratio={resync_ratio:.3f}")
     out = "\n".join(lines)
@@ -128,21 +162,50 @@ def cmd_status_top(db_url: str = ":memory:", limit: int = 5) -> str:
     # Sort: resync ratio desc, then rejects desc, then place_errs desc, then cancel rate-limit desc
     stats.sort(key=lambda x: (-x[1], -x[3], -x[4], -x[2], x[0]))
     top = stats[: max(1, limit)]
-    lines = ["market_id resync_ratio rejects place_errors cancel_rate_limited"]
+    # Global counters for relayer limits/timeouts
+    from polybot.observability.metrics import get_counter
+    rl = get_counter("relayer_rate_limited_total")
+    to = get_counter("relayer_timeouts_total")
+    lines = ["market_id resync_ratio rejects place_errors cancel_rate_limited rate_limited_total timeouts_total"]
     for mkt, ratio, crl, rej, perr in top:
-        lines.append(f"{mkt} {ratio:.3f} {rej} {perr} {crl}")
+        lines.append(f"{mkt} {ratio:.3f} {rej} {perr} {crl} {rl} {to}")
     out = "\n".join(lines)
     print(out)
     return out
 
 
-def cmd_status_summary(db_url: str = ":memory:") -> str:
+def cmd_status_summary(db_url: str = ":memory:", as_json: bool = False) -> str:
     """Print a concise per-market summary using DB status and in-process metrics.
 
     Columns: market_id resync_ratio rejects place_errors runtime_avg_ms
     """
     con = connect_sqlite(db_url)
     rows = con.execute("SELECT market_id FROM market_status ORDER BY market_id").fetchall()
+    if as_json:
+        import json as _json
+        items = []
+        for (mkt,) in rows:
+            applied = get_counter_labelled("ingestion_msg_applied", {"market": mkt})
+            gap = get_counter_labelled("ingestion_resync_gap", {"market": mkt})
+            csum = get_counter_labelled("ingestion_resync_checksum", {"market": mkt})
+            firstd = get_counter_labelled("ingestion_resync_first_delta", {"market": mkt})
+            total_resyncs = gap + csum + firstd
+            resync_ratio = (total_resyncs / max(1, applied)) if applied else 0
+            rejects = get_counter_labelled("relayer_acks_rejected", {"market": mkt})
+            place_errs = get_counter_labelled("relayer_place_errors", {"market": mkt})
+            rt_sum = get_counter_labelled("service_market_runtime_ms_sum", {"market": mkt})
+            rt_cnt = get_counter_labelled("service_market_runtime_count", {"market": mkt})
+            rt_avg = (rt_sum / rt_cnt) if rt_cnt else 0
+            items.append({
+                "market_id": mkt,
+                "resync_ratio": resync_ratio,
+                "rejects": rejects,
+                "place_errors": place_errs,
+                "runtime_avg_ms": rt_avg,
+            })
+        out = _json.dumps(items)
+        print(out)
+        return out
     lines = ["market_id resync_ratio rejects place_errors runtime_avg_ms"]
     for (mkt,) in rows:
         applied = get_counter_labelled("ingestion_msg_applied", {"market": mkt})
@@ -779,7 +842,17 @@ def cmd_relayer_live_order(
     )
     res = engine.execute_plan(plan)
     accepted = sum(1 for a in res.acks if a.accepted)
-    out = f"live placed={len(res.acks)} accepted={accepted}"
+    # status breakdown
+    status_counts: dict[str, int] = {}
+    for a in res.acks:
+        s = str(getattr(a, "status", "") or "")
+        status_counts[s] = status_counts.get(s, 0) + 1
+    parts = [f"live placed={len(res.acks)} accepted={accepted}"]
+    # include common statuses if present
+    for key in ("filled", "partial", "accepted", "rejected"):
+        if status_counts.get(key):
+            parts.append(f"{key}={status_counts[key]}")
+    out = " ".join(parts)
     print(out)
     return out
 

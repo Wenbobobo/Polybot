@@ -45,11 +45,13 @@ def main() -> None:
     p_status = sub.add_parser("status", help="Show market ingestion status")
     p_status.add_argument("--db-url", default=":memory:")
     p_status.add_argument("--verbose", action="store_true")
+    p_status.add_argument("--json", action="store_true")
     p_top = sub.add_parser("status-top", help="Show top markets by resync ratio and cancel rate-limit")
     p_top.add_argument("--db-url", default=":memory:")
     p_top.add_argument("--limit", type=int, default=5)
     p_sum = sub.add_parser("status-summary", help="Show concise per-market summary (resyncs/rejects/errors/runtime)")
     p_sum.add_argument("--db-url", default=":memory:")
+    p_sum.add_argument("--json", action="store_true")
     p_audit = sub.add_parser("audit-tail", help="Print recent exec_audit rows")
     p_audit.add_argument("--db-url", default=":memory:")
     p_audit.add_argument("--limit", type=int, default=10)
@@ -191,7 +193,7 @@ def main() -> None:
     elif args.cmd == "ingest-ws":
         cmd_ingest_ws(args.url, args.market_id, snapshot_json=args.snapshot_json, db_url=args.db_url, max_messages=args.max_messages)
     elif args.cmd == "status":
-        cmd_status(db_url=args.db_url, verbose=args.verbose)
+        cmd_status(db_url=args.db_url, verbose=args.verbose, as_json=args.json)
     elif args.cmd == "health":
         cmd_health(db_url=args.db_url, staleness_threshold_ms=args.staleness_ms)
     elif args.cmd == "metrics":
@@ -233,7 +235,7 @@ def main() -> None:
         cmd_status_top(db_url=args.db_url, limit=args.limit)
     elif args.cmd == "status-summary":
         from .commands import cmd_status_summary
-        cmd_status_summary(db_url=args.db_url)
+        cmd_status_summary(db_url=args.db_url, as_json=args.json)
     elif args.cmd == "audit-tail":
         from .commands import cmd_audit_tail
         cmd_audit_tail(db_url=args.db_url, limit=args.limit)

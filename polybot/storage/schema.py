@@ -114,6 +114,7 @@ DDL = {
             duration_ms INTEGER,
             place_call_ms INTEGER,
             ack_latency_ms INTEGER,
+            request_id TEXT,
             plan_rationale TEXT,
             expected_profit REAL,
             intents_json TEXT,

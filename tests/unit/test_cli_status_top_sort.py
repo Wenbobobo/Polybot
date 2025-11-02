@@ -26,7 +26,8 @@ def test_status_top_includes_place_errors_and_sorts(tmp_path):
     inc_labelled("ingestion_resync_gap", {"market": "m2"}, 3)
     inc_labelled("relayer_place_errors", {"market": "m2"}, 2)
     out = cmd_status_top(db_url=db_url, limit=2)
-    # Header includes place_errors column
-    assert "place_errors" in out.splitlines()[0]
+    # Header includes extended columns
+    header = out.splitlines()[0]
+    assert "place_errors" in header and "rate_limited_total" in header and "timeouts_total" in header
     # m2 should appear first due to higher resync ratio and place errors
     assert out.splitlines()[1].startswith("m2 ")

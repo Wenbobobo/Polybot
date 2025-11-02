@@ -137,15 +137,17 @@ class ExecutionEngine:
                 duration_ms = int((time.perf_counter() - start_perf) * 1000)
                 intents_json = json.dumps([i.__dict__ for i in plan.intents])
                 acks_json = json.dumps([a.__dict__ for a in acks])
+                req_id = uuid.uuid4().hex
                 try:
                     self.audit_db.execute(
-                        "INSERT INTO exec_audit (ts_ms, plan_id, duration_ms, place_call_ms, ack_latency_ms, plan_rationale, expected_profit, intents_json, acks_json) VALUES (?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO exec_audit (ts_ms, plan_id, duration_ms, place_call_ms, ack_latency_ms, request_id, plan_rationale, expected_profit, intents_json, acks_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
                         (
                             ts_ms,
                             plan_id,
                             duration_ms,
                             last_call_dur_ms,
                             last_call_dur_ms,
+                            req_id,
                             plan.rationale,
                             plan.expected_profit,
                             intents_json,
@@ -155,8 +157,8 @@ class ExecutionEngine:
                 except Exception:
                     # Fallback to old schema if new columns are not present
                     self.audit_db.execute(
-                        "INSERT INTO exec_audit (ts_ms, plan_id, duration_ms, plan_rationale, expected_profit, intents_json, acks_json) VALUES (?,?,?,?,?,?,?)",
-                        (ts_ms, plan_id, duration_ms, plan.rationale, plan.expected_profit, intents_json, acks_json),
+                        "INSERT INTO exec_audit (ts_ms, plan_id, duration_ms, place_call_ms, ack_latency_ms, plan_rationale, expected_profit, intents_json, acks_json) VALUES (?,?,?,?,?,?,?,?,?)",
+                        (ts_ms, plan_id, duration_ms, last_call_dur_ms, last_call_dur_ms, plan.rationale, plan.expected_profit, intents_json, acks_json),
                     )
                 self.audit_db.commit()
             except Exception:
