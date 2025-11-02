@@ -112,6 +112,8 @@ DDL = {
             ts_ms INTEGER NOT NULL,
             plan_id TEXT,
             duration_ms INTEGER,
+            place_call_ms INTEGER,
+            ack_latency_ms INTEGER,
             plan_rationale TEXT,
             expected_profit REAL,
             intents_json TEXT,

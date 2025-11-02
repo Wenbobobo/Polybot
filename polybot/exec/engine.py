@@ -51,6 +51,7 @@ class ExecutionEngine:
             # Pass idempotency_prefix if relayer supports it
             acks: List[OrderAck]
             attempt = 0
+            last_call_dur_ms = 0
             while True:
                 try:
                     call_start = time.perf_counter()
@@ -60,6 +61,7 @@ class ExecutionEngine:
                     else:
                         acks = self.relayer.place_orders(reqs)  # type: ignore[call-arg]
                     call_dur_ms = int((time.perf_counter() - call_start) * 1000)
+                    last_call_dur_ms = call_dur_ms
                     # labelled duration per market for the relayer call itself
                     for mid in set(i.market_id for i in plan.intents):
                         inc_labelled("engine_place_call_ms_sum", {"market": mid}, call_dur_ms)
@@ -72,6 +74,7 @@ class ExecutionEngine:
                     call_start = time.perf_counter()
                     acks = self.relayer.place_orders(reqs)  # type: ignore[call-arg]
                     call_dur_ms = int((time.perf_counter() - call_start) * 1000)
+                    last_call_dur_ms = call_dur_ms
                     for mid in set(i.market_id for i in plan.intents):
                         inc_labelled("engine_place_call_ms_sum", {"market": mid}, call_dur_ms)
                         inc_labelled("engine_place_call_count", {"market": mid}, 1)
@@ -134,10 +137,27 @@ class ExecutionEngine:
                 duration_ms = int((time.perf_counter() - start_perf) * 1000)
                 intents_json = json.dumps([i.__dict__ for i in plan.intents])
                 acks_json = json.dumps([a.__dict__ for a in acks])
-                self.audit_db.execute(
-                    "INSERT INTO exec_audit (ts_ms, plan_id, duration_ms, plan_rationale, expected_profit, intents_json, acks_json) VALUES (?,?,?,?,?,?,?)",
-                    (ts_ms, plan_id, duration_ms, plan.rationale, plan.expected_profit, intents_json, acks_json),
-                )
+                try:
+                    self.audit_db.execute(
+                        "INSERT INTO exec_audit (ts_ms, plan_id, duration_ms, place_call_ms, ack_latency_ms, plan_rationale, expected_profit, intents_json, acks_json) VALUES (?,?,?,?,?,?,?,?,?)",
+                        (
+                            ts_ms,
+                            plan_id,
+                            duration_ms,
+                            last_call_dur_ms,
+                            last_call_dur_ms,
+                            plan.rationale,
+                            plan.expected_profit,
+                            intents_json,
+                            acks_json,
+                        ),
+                    )
+                except Exception:
+                    # Fallback to old schema if new columns are not present
+                    self.audit_db.execute(
+                        "INSERT INTO exec_audit (ts_ms, plan_id, duration_ms, plan_rationale, expected_profit, intents_json, acks_json) VALUES (?,?,?,?,?,?,?)",
+                        (ts_ms, plan_id, duration_ms, plan.rationale, plan.expected_profit, intents_json, acks_json),
+                    )
                 self.audit_db.commit()
             except Exception:
                 pass

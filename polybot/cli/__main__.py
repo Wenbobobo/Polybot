@@ -48,6 +48,11 @@ def main() -> None:
     p_top = sub.add_parser("status-top", help="Show top markets by resync ratio and cancel rate-limit")
     p_top.add_argument("--db-url", default=":memory:")
     p_top.add_argument("--limit", type=int, default=5)
+    p_sum = sub.add_parser("status-summary", help="Show concise per-market summary (resyncs/rejects/errors/runtime)")
+    p_sum.add_argument("--db-url", default=":memory:")
+    p_audit = sub.add_parser("audit-tail", help="Print recent exec_audit rows")
+    p_audit.add_argument("--db-url", default=":memory:")
+    p_audit.add_argument("--limit", type=int, default=10)
 
     p_health = sub.add_parser("health", help="Health check: staleness")
     p_health.add_argument("--db-url", default=":memory:")
@@ -226,6 +231,12 @@ def main() -> None:
         )
     elif args.cmd == "status-top":
         cmd_status_top(db_url=args.db_url, limit=args.limit)
+    elif args.cmd == "status-summary":
+        from .commands import cmd_status_summary
+        cmd_status_summary(db_url=args.db_url)
+    elif args.cmd == "audit-tail":
+        from .commands import cmd_audit_tail
+        cmd_audit_tail(db_url=args.db_url, limit=args.limit)
     elif args.cmd == "migrate":
         cmd_migrate(db_url=args.db_url, print_sql=args.print_sql, apply=args.apply)
     elif args.cmd == "record-ws":
@@ -292,7 +303,24 @@ def main() -> None:
         )
     elif args.cmd == "tgbot-run-local":
         cmd_tgbot_run_local(args.updates_file, args.market_id, args.outcome_yes_id, db_url=args.db_url)
+    elif args.cmd == "tgbot-serve":
+        from .commands import cmd_tgbot_serve
+        cmd_tgbot_serve(
+            host=args.host,
+            port=args.port,
+            secret=args.secret,
+            allowed=args.allowed,
+            market_id=args.market_id,
+            outcome_yes_id=args.outcome_yes_id,
+        )
 
 
 if __name__ == "__main__":
     main()
+    p_tgs = sub.add_parser("tgbot-serve", help="Serve a minimal Telegram webhook endpoint (offline engine)")
+    p_tgs.add_argument("--host", default="127.0.0.1")
+    p_tgs.add_argument("--port", type=int, default=0)
+    p_tgs.add_argument("--secret", default="/tg")
+    p_tgs.add_argument("--allowed", help="Comma-separated allowed user IDs", default="")
+    p_tgs.add_argument("--market-id", required=True)
+    p_tgs.add_argument("--outcome-yes-id", required=True)

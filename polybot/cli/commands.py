@@ -34,9 +34,11 @@ from polybot.observability.server import start_metrics_server
 from polybot.storage.migrate import migrate as migrate_db
 from polybot.tgbot.agent import BotAgent, BotContext
 from polybot.tgbot.runner import TelegramUpdateRunner
+from polybot.tgbot.webhook_server import start_tg_server, stop_tg_server
 from polybot.storage.db import parse_db_url
 from polybot.adapters.polymarket.ctf import build_ctf, MergeRequest, SplitRequest
 from polybot.observability.metrics import reset as metrics_reset_fn
+import json as _json
 
 
 def init_db(db_url: str):
@@ -129,6 +131,58 @@ def cmd_status_top(db_url: str = ":memory:", limit: int = 5) -> str:
     lines = ["market_id resync_ratio rejects place_errors cancel_rate_limited"]
     for mkt, ratio, crl, rej, perr in top:
         lines.append(f"{mkt} {ratio:.3f} {rej} {perr} {crl}")
+    out = "\n".join(lines)
+    print(out)
+    return out
+
+
+def cmd_status_summary(db_url: str = ":memory:") -> str:
+    """Print a concise per-market summary using DB status and in-process metrics.
+
+    Columns: market_id resync_ratio rejects place_errors runtime_avg_ms
+    """
+    con = connect_sqlite(db_url)
+    rows = con.execute("SELECT market_id FROM market_status ORDER BY market_id").fetchall()
+    lines = ["market_id resync_ratio rejects place_errors runtime_avg_ms"]
+    for (mkt,) in rows:
+        applied = get_counter_labelled("ingestion_msg_applied", {"market": mkt})
+        gap = get_counter_labelled("ingestion_resync_gap", {"market": mkt})
+        csum = get_counter_labelled("ingestion_resync_checksum", {"market": mkt})
+        firstd = get_counter_labelled("ingestion_resync_first_delta", {"market": mkt})
+        total_resyncs = gap + csum + firstd
+        resync_ratio = (total_resyncs / max(1, applied)) if applied else 0
+        rejects = get_counter_labelled("relayer_acks_rejected", {"market": mkt})
+        place_errs = get_counter_labelled("relayer_place_errors", {"market": mkt})
+        rt_sum = get_counter_labelled("service_market_runtime_ms_sum", {"market": mkt})
+        rt_cnt = get_counter_labelled("service_market_runtime_count", {"market": mkt})
+        rt_avg = (rt_sum / rt_cnt) if rt_cnt else 0
+        lines.append(f"{mkt} {resync_ratio:.3f} {rejects} {place_errs} {rt_avg:.1f}")
+    out = "\n".join(lines)
+    print(out)
+    return out
+
+
+def cmd_audit_tail(db_url: str = ":memory:", limit: int = 10) -> str:
+    """Print the most recent exec_audit rows in a compact form.
+
+    Columns: ts_ms plan_id duration_ms place_ms ack_ms intents acks
+    """
+    con = connect_sqlite(db_url)
+    rows = con.execute(
+        "SELECT ts_ms, plan_id, duration_ms, place_call_ms, ack_latency_ms, intents_json, acks_json FROM exec_audit ORDER BY id DESC LIMIT ?",
+        (max(1, int(limit)),),
+    ).fetchall()
+    lines = ["ts_ms plan_id duration_ms place_ms ack_ms intents acks"]
+    for ts, pid, dur, plc, ack, intents_json, acks_json in rows:
+        try:
+            intents = len(_json.loads(intents_json or "[]"))
+        except Exception:
+            intents = 0
+        try:
+            acks = len(_json.loads(acks_json or "[]"))
+        except Exception:
+            acks = 0
+        lines.append(f"{ts} {pid or ''} {dur or 0} {plc or 0} {ack or 0} {intents} {acks}")
     out = "\n".join(lines)
     print(out)
     return out
@@ -270,7 +324,12 @@ def cmd_smoke_live(config_path: str, market_id: str, outcome_id: str, side: str,
     if not pre.startswith("OK:"):
         return pre
     res = cmd_relayer_dry_run(market_id, outcome_id, side, price, size, base_url=base_url, private_key=private_key, db_url=":memory:", chain_id=chain_id, timeout_s=timeout_s)
-    out = f"{pre}\n{res}"
+    # append brief relayer rate-limit/timeout metrics for quick diagnostics
+    from polybot.observability.metrics import get_counter
+
+    rl = get_counter("relayer_rate_limited_total")
+    to = get_counter("relayer_timeouts_total")
+    out = f"{pre}\n{res}\nmetrics: rate_limited={rl} timeouts={to}"
     print(out)
     return out
 
@@ -348,6 +407,11 @@ async def cmd_run_service_from_config_async(config_path: str) -> None:
         engine_retry_sleep_ms=cfg.engine_retry_sleep_ms,
     )
     await sr.run_markets(cfg.markets)
+    # After completion, print a concise per-market summary for operator visibility
+    try:
+        cmd_status_summary(db_url=cfg.db_url)
+    except Exception:
+        pass
 
 
 async def cmd_record_ws_async(url: str, outfile: str, max_messages: Optional[int] = None, subscribe: bool = False, translate: bool = True) -> None:
@@ -732,3 +796,38 @@ def cmd_tgbot_run_local(updates_file: str, market_id: str, outcome_yes_id: str, 
     out = "\n".join(outputs)
     print(out)
     return out
+
+
+def cmd_tgbot_serve(
+    host: str,
+    port: int,
+    secret: str,
+    allowed: str,
+    market_id: str,
+    outcome_yes_id: str,
+) -> int:
+    """Serve a minimal Telegram-like webhook that forwards text to BotAgent.
+
+    Safety: uses an in-process FakeRelayer engine. For real trading, wire the
+    service config and engine separately and gate live actions with approvals.
+    """
+    setup_logging()
+    con = init_db(":memory:")
+    engine = ExecutionEngine(FakeRelayer(fill_ratio=0.0), audit_db=con)
+    agent = BotAgent(engine, BotContext(market_id=market_id, outcome_yes_id=outcome_yes_id))
+    allowed_ids: list[int] = []
+    if allowed.strip():
+        try:
+            allowed_ids = [int(x) for x in allowed.split(",") if x.strip()]
+        except Exception:
+            allowed_ids = []
+    server, _ = start_tg_server(agent, host=host, port=port, secret_path=secret, allowed_ids=allowed_ids)
+    actual_port = server.server_address[1]
+    print(f"tgbot-serve listening on http://{host}:{actual_port}{secret} (allowed={allowed_ids or 'any'})")
+    try:
+        import time
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        stop_tg_server(server)
+    return actual_port
