@@ -49,20 +49,28 @@ def main() -> None:
     p_top = sub.add_parser("status-top", help="Show top markets by resync ratio and cancel rate-limit")
     p_top.add_argument("--db-url", default=":memory:")
     p_top.add_argument("--limit", type=int, default=5)
+    p_top.add_argument("--json", action="store_true")
     p_sum = sub.add_parser("status-summary", help="Show concise per-market summary (resyncs/rejects/errors/runtime)")
     p_sum.add_argument("--db-url", default=":memory:")
     p_sum.add_argument("--json", action="store_true")
     p_audit = sub.add_parser("audit-tail", help="Print recent exec_audit rows")
     p_audit.add_argument("--db-url", default=":memory:")
     p_audit.add_argument("--limit", type=int, default=10)
+    p_audit.add_argument("--json", action="store_true")
+    p_ords = sub.add_parser("orders-tail", help="Print recent orders from DB")
+    p_ords.add_argument("--db-url", default=":memory:")
+    p_ords.add_argument("--limit", type=int, default=5)
+    p_ords.add_argument("--json", action="store_true")
 
     p_health = sub.add_parser("health", help="Health check: staleness")
     p_health.add_argument("--db-url", default=":memory:")
     p_health.add_argument("--staleness-ms", type=int, default=30000)
+    p_health.add_argument("--json", action="store_true")
 
     sub.add_parser("metrics", help="Print in-process metrics counters")
     sub.add_parser("metrics-export", help="Print Prometheus text exposition of metrics")
     sub.add_parser("metrics-reset", help="Reset in-process metrics (testing/diagnostics)")
+    sub.add_parser("metrics-json", help="Print metrics counters as JSON")
     p_mserve = sub.add_parser("metrics-serve", help="Serve /metrics over HTTP (local only)")
     p_mserve.add_argument("--host", default="127.0.0.1")
     p_mserve.add_argument("--port", type=int, default=0)
@@ -71,6 +79,11 @@ def main() -> None:
 
     p_pf = sub.add_parser("preflight", help="Validate a service config TOML before running live")
     p_pf.add_argument("--config", required=True)
+    p_pf.add_argument("--json", action="store_true")
+    p_cfgd = sub.add_parser("config-dump", help="Load a service TOML and print normalized JSON (secrets redacted)")
+    p_cfgd.add_argument("--config", required=True)
+    p_cfgd = sub.add_parser("config-dump", help="Load a service TOML and print normalized JSON (secrets redacted)")
+    p_cfgd.add_argument("--config", required=True)
 
     p_migrate = sub.add_parser("migrate", help="Run or print DB migrations")
     p_migrate.add_argument("--db-url", required=True)
@@ -108,6 +121,7 @@ def main() -> None:
 
     p_service = sub.add_parser("run-service", help="Run multi-market service from TOML config")
     p_service.add_argument("--config", required=True)
+    p_service.add_argument("--summary-json-output", help="Write summary JSON to file on completion")
 
     p_dutch = sub.add_parser("dutch-run-replay", help="Run dutch-book detector from multi-outcome JSONL events")
     p_dutch.add_argument("file")
@@ -181,6 +195,15 @@ def main() -> None:
     p_smoke.add_argument("--chain-id", type=int, default=137)
     p_smoke.add_argument("--timeout-s", type=float, default=10.0)
 
+    p_cancel = sub.add_parser("orders-cancel", help="Cancel client orders by client_oid")
+    p_cancel.add_argument("client_oids", help=",-separated client order IDs (e.g., c1,c2)")
+    p_cancel.add_argument("--db-url", default=":memory:")
+    p_cancel.add_argument("--relayer", default="fake")
+    p_cancel.add_argument("--base-url", default="https://clob.polymarket.com")
+    p_cancel.add_argument("--private-key", default="")
+    p_cancel.add_argument("--chain-id", type=int, default=137)
+    p_cancel.add_argument("--timeout-s", type=float, default=10.0)
+
     p_tg = sub.add_parser("tgbot-run-local", help="Run offline Telegram-like updates from JSONL and print responses")
     p_tg.add_argument("updates_file")
     p_tg.add_argument("market_id")
@@ -195,7 +218,7 @@ def main() -> None:
     elif args.cmd == "status":
         cmd_status(db_url=args.db_url, verbose=args.verbose, as_json=args.json)
     elif args.cmd == "health":
-        cmd_health(db_url=args.db_url, staleness_threshold_ms=args.staleness_ms)
+        cmd_health(db_url=args.db_url, staleness_threshold_ms=args.staleness_ms, as_json=args.json)
     elif args.cmd == "metrics":
         cmd_metrics()
     elif args.cmd == "metrics-export":
@@ -205,12 +228,18 @@ def main() -> None:
     elif args.cmd == "metrics-reset":
         from .commands import cmd_metrics_reset
         cmd_metrics_reset()
+    elif args.cmd == "metrics-json":
+        from .commands import cmd_metrics_json
+        cmd_metrics_json()
     elif args.cmd == "migrate-timescale":
         from .commands import cmd_migrate_timescale_print
         cmd_migrate_timescale_print()
     elif args.cmd == "preflight":
         from .commands import cmd_preflight
-        cmd_preflight(args.config)
+        cmd_preflight(args.config, as_json=args.json)
+    elif args.cmd == "config-dump":
+        from .commands import cmd_config_dump
+        cmd_config_dump(args.config)
     elif args.cmd == "conversions-merge":
         from .commands import cmd_conversions_merge
         cmd_conversions_merge(args.market_id, args.yes_id, args.no_id, args.size)
@@ -231,14 +260,28 @@ def main() -> None:
             chain_id=args.chain_id,
             timeout_s=args.timeout_s,
         )
+    elif args.cmd == "orders-cancel":
+        from .commands import cmd_orders_cancel_client_oids
+        cmd_orders_cancel_client_oids(
+            client_oids=args.client_oids,
+            db_url=args.db_url,
+            relayer_type=args.relayer,
+            base_url=args.base_url,
+            private_key=args.private_key,
+            chain_id=args.chain_id,
+            timeout_s=args.timeout_s,
+        )
     elif args.cmd == "status-top":
-        cmd_status_top(db_url=args.db_url, limit=args.limit)
+        cmd_status_top(db_url=args.db_url, limit=args.limit, as_json=args.json)
     elif args.cmd == "status-summary":
         from .commands import cmd_status_summary
         cmd_status_summary(db_url=args.db_url, as_json=args.json)
     elif args.cmd == "audit-tail":
         from .commands import cmd_audit_tail
         cmd_audit_tail(db_url=args.db_url, limit=args.limit)
+    elif args.cmd == "orders-tail":
+        from .commands import cmd_orders_tail
+        cmd_orders_tail(db_url=args.db_url, limit=args.limit, as_json=args.json)
     elif args.cmd == "migrate":
         cmd_migrate(db_url=args.db_url, print_sql=args.print_sql, apply=args.apply)
     elif args.cmd == "record-ws":
@@ -257,7 +300,7 @@ def main() -> None:
         asyncio.run(cmd_quoter_run_ws_async(args.url, args.market_id, args.outcome_yes_id, db_url=args.db_url, max_messages=args.max_messages, subscribe=args.subscribe))
     elif args.cmd == "run-service":
         import asyncio
-        asyncio.run(cmd_run_service_from_config_async(args.config))
+        asyncio.run(cmd_run_service_from_config_async(args.config, summary_json_output=args.summary_json_output))
     elif args.cmd == "dutch-run-replay":
         import asyncio
         asyncio.run(
@@ -319,10 +362,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    p_tgs = sub.add_parser("tgbot-serve", help="Serve a minimal Telegram webhook endpoint (offline engine)")
-    p_tgs.add_argument("--host", default="127.0.0.1")
-    p_tgs.add_argument("--port", type=int, default=0)
-    p_tgs.add_argument("--secret", default="/tg")
-    p_tgs.add_argument("--allowed", help="Comma-separated allowed user IDs", default="")
-    p_tgs.add_argument("--market-id", required=True)
-    p_tgs.add_argument("--outcome-yes-id", required=True)

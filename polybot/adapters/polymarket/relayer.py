@@ -197,7 +197,7 @@ class RetryRelayer:
             except Exception:
                 attempt += 1
                 try:
-                    from polybot.observability.metrics import inc
+                    from polybot.observability.metrics import inc, inc_labelled
 
                     inc("relayer_retries_total", 1)
                     # classify rate-limit style errors
@@ -208,8 +208,21 @@ class RetryRelayer:
                         msg = str(e) if e else ""
                         if code == 429 or (isinstance(msg, str) and "rate limit" in msg.lower()):
                             inc("relayer_rate_limited_total", 1)
+                            # labelled per-market
+                            try:
+                                mkts = sorted({r.market_id for r in reqs})
+                                for m in mkts:
+                                    inc_labelled("relayer_rate_limited_events", {"market": m}, 1)
+                            except Exception:
+                                pass
                         if isinstance(e, TimeoutError) or (isinstance(msg, str) and "timeout" in msg.lower()):
                             inc("relayer_timeouts_total", 1)
+                            try:
+                                mkts = sorted({r.market_id for r in reqs})
+                                for m in mkts:
+                                    inc_labelled("relayer_timeouts_events", {"market": m}, 1)
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                 except Exception:

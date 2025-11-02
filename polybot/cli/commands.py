@@ -90,6 +90,8 @@ def cmd_status(db_url: str = ":memory:", verbose: bool = False, as_json: bool = 
             }
             if verbose:
                 item["quotes_placed"] = get_counter_labelled("quotes_placed", {"market": mkt})
+                item["quotes_cancel_rate_limited"] = get_counter_labelled("quotes_cancel_rate_limited", {"market": mkt})
+                item["quotes_rate_limited"] = get_counter_labelled("quotes_rate_limited", {"market": mkt})
             items.append(item)
         out = _json.dumps(items)
         print(out)
@@ -131,7 +133,9 @@ def cmd_status(db_url: str = ":memory:", verbose: bool = False, as_json: bool = 
             resync_ratio = (total_resyncs / max(1, applied)) if applied else 0
             lines.append(f"  quotes: placed={qp} canceled={qc} skipped={qs} skipped_same={qss} rate_limited={qrl} cancel_rate_limited={qcrl}")
             lines.append(f"  orders: placed={op} filled={of} exec_avg_ms={avg_ms:.1f} exec_count={ec} retries={eret} ack_avg_ms={ack_avg:.1f}")
-            lines.append(f"  relayer: acks_accepted={rak_ok} acks_rejected={rak_rej} rate_limited_total={rl} timeouts_total={to}")
+            rrl = get_counter_labelled("relayer_rate_limited_events", {"market": mkt})
+            rto = get_counter_labelled("relayer_timeouts_events", {"market": mkt})
+            lines.append(f"  relayer: acks_accepted={rak_ok} acks_rejected={rak_rej} rate_limited_total={rl} timeouts_total={to} per_market_rl={rrl} per_market_to={rto}")
             lines.append(f"  dutch: placed={dplaced} rulehash_changed={drh}")
             lines.append(f"  resyncs: total={total_resyncs} ratio={resync_ratio:.3f}")
     out = "\n".join(lines)
@@ -202,6 +206,8 @@ def cmd_status_summary(db_url: str = ":memory:", as_json: bool = False) -> str:
                 "rejects": rejects,
                 "place_errors": place_errs,
                 "runtime_avg_ms": rt_avg,
+                "quotes_cancel_rate_limited": get_counter_labelled("quotes_cancel_rate_limited", {"market": mkt}),
+                "quotes_rate_limited": get_counter_labelled("quotes_rate_limited", {"market": mkt}),
             })
         out = _json.dumps(items)
         print(out)
@@ -225,18 +231,60 @@ def cmd_status_summary(db_url: str = ":memory:", as_json: bool = False) -> str:
     return out
 
 
-def cmd_audit_tail(db_url: str = ":memory:", limit: int = 10) -> str:
+def cmd_audit_tail(db_url: str = ":memory:", limit: int = 10, as_json: bool = False) -> str:
     """Print the most recent exec_audit rows in a compact form.
 
     Columns: ts_ms plan_id duration_ms place_ms ack_ms intents acks
     """
     con = connect_sqlite(db_url)
-    rows = con.execute(
-        "SELECT ts_ms, plan_id, duration_ms, place_call_ms, ack_latency_ms, intents_json, acks_json FROM exec_audit ORDER BY id DESC LIMIT ?",
-        (max(1, int(limit)),),
-    ).fetchall()
-    lines = ["ts_ms plan_id duration_ms place_ms ack_ms intents acks"]
-    for ts, pid, dur, plc, ack, intents_json, acks_json in rows:
+    try:
+        rows = con.execute(
+            "SELECT ts_ms, plan_id, duration_ms, place_call_ms, ack_latency_ms, request_id, intents_json, acks_json FROM exec_audit ORDER BY id DESC LIMIT ?",
+            (max(1, int(limit)),),
+        ).fetchall()
+        with_rid = True
+    except Exception:
+        rows = con.execute(
+            "SELECT ts_ms, plan_id, duration_ms, place_call_ms, ack_latency_ms, intents_json, acks_json FROM exec_audit ORDER BY id DESC LIMIT ?",
+            (max(1, int(limit)),),
+        ).fetchall()
+        with_rid = False
+    if as_json:
+        items = []
+        for row in rows:
+            if with_rid:
+                ts, pid, dur, plc, ack, rid, intents_json, acks_json = row
+            else:
+                ts, pid, dur, plc, ack, intents_json, acks_json = row
+                rid = ""
+            try:
+                intents = len(_json.loads(intents_json or "[]"))
+            except Exception:
+                intents = 0
+            try:
+                acks = len(_json.loads(acks_json or "[]"))
+            except Exception:
+                acks = 0
+            items.append({
+                "ts_ms": ts,
+                "plan_id": pid,
+                "duration_ms": dur,
+                "place_ms": plc,
+                "ack_ms": ack,
+                "request_id": rid,
+                "intents": intents,
+                "acks": acks,
+            })
+        out = _json.dumps(items)
+        print(out)
+        return out
+    lines = ["ts_ms plan_id duration_ms place_ms ack_ms request_id intents acks"]
+    for row in rows:
+        if with_rid:
+            ts, pid, dur, plc, ack, rid, intents_json, acks_json = row
+        else:
+            ts, pid, dur, plc, ack, intents_json, acks_json = row
+            rid = ""
         try:
             intents = len(_json.loads(intents_json or "[]"))
         except Exception:
@@ -245,7 +293,7 @@ def cmd_audit_tail(db_url: str = ":memory:", limit: int = 10) -> str:
             acks = len(_json.loads(acks_json or "[]"))
         except Exception:
             acks = 0
-        lines.append(f"{ts} {pid or ''} {dur or 0} {plc or 0} {ack or 0} {intents} {acks}")
+        lines.append(f"{ts} {pid or ''} {dur or 0} {plc or 0} {ack or 0} {rid or ''} {intents} {acks}")
     out = "\n".join(lines)
     print(out)
     return out
@@ -261,9 +309,15 @@ def cmd_status_watch(db_url: str = ":memory:", interval_ms: int = 1000, iteratio
     return "\n---\n".join(outputs)
 
 
-def cmd_health(db_url: str = ":memory:", staleness_threshold_ms: int = 30000) -> str:
-    con = connect_sqlite(db_url)
+def cmd_health(db_url: str = ":memory:", staleness_threshold_ms: int = 30000, as_json: bool = False) -> str:
+    # Ensure schema exists for health checks
+    con = init_db(db_url)
     issues = check_staleness(con, staleness_threshold_ms)
+    if as_json:
+        import json as _json
+        out = _json.dumps({"ok": not bool(issues), "issues": issues})
+        print(out)
+        return out
     if not issues:
         out = "OK: no stale markets"
         print(out)
@@ -303,6 +357,129 @@ def cmd_metrics_reset() -> str:
     return msg
 
 
+def cmd_metrics_json() -> str:
+    """Return in-process metrics counters as JSON."""
+    from polybot.observability.metrics import list_counters, list_counters_labelled
+
+    data = {
+        "counters": {name: val for name, val in list_counters()},
+        "labelled": [
+            {"name": name, "labels": {k: v for k, v in labels}, "value": val}
+            for (name, labels, val) in list_counters_labelled()
+        ],
+    }
+    text = _json.dumps(data)
+    print(text)
+    return text
+
+
+def cmd_config_dump(config_path: str) -> str:
+    """Load a service TOML and print normalized JSON (with secrets redacted)."""
+    from polybot.service.config import load_service_config
+    try:
+        cfg = load_service_config(config_path)
+    except Exception as e:  # noqa: BLE001
+        out = f"INVALID: failed to parse config: {e}"
+        print(out)
+        return out
+    data = {
+        "db_url": cfg.db_url,
+        "relayer": {
+            "type": cfg.relayer_type,
+            "base_url": cfg.relayer_base_url,
+            "dry_run": cfg.relayer_dry_run,
+            "chain_id": cfg.relayer_chain_id,
+            "timeout_s": cfg.relayer_timeout_s,
+            "private_key": "***redacted***" if cfg.relayer_private_key else "",
+        },
+        "service": {
+            "engine_max_retries": cfg.engine_max_retries,
+            "engine_retry_sleep_ms": cfg.engine_retry_sleep_ms,
+            "relayer_max_retries": cfg.relayer_max_retries,
+            "relayer_retry_sleep_ms": cfg.relayer_retry_sleep_ms,
+        },
+        "markets": [
+            {
+                "market_id": m.market_id,
+                "outcome_yes_id": m.outcome_yes_id,
+                "ws_url": m.ws_url,
+                "subscribe": m.subscribe,
+                "max_messages": m.max_messages or 0,
+            }
+            for m in cfg.markets
+        ],
+    }
+    text = _json.dumps(data)
+    print(text)
+    return text
+
+
+def cmd_orders_tail(db_url: str = ":memory:", limit: int = 5, as_json: bool = False) -> str:
+    con = connect_sqlite(db_url)
+    rows = con.execute(
+        "SELECT order_id, market_id, outcome_id, side, price, size, tif, status, created_ts_ms FROM orders ORDER BY created_ts_ms DESC, order_id DESC LIMIT ?",
+        (max(1, int(limit)),),
+    ).fetchall()
+    if as_json:
+        out = _json.dumps([
+            {
+                "order_id": r[0],
+                "market_id": r[1],
+                "outcome_id": r[2],
+                "side": r[3],
+                "price": r[4],
+                "size": r[5],
+                "tif": r[6],
+                "status": r[7],
+                "created_ts_ms": r[8],
+            }
+            for r in rows
+        ])
+        print(out)
+        return out
+    lines = ["order_id market_id outcome_id side price size tif status created_ts_ms"]
+    for r in rows:
+        lines.append(f"{r[0]} {r[1]} {r[2]} {r[3]} {r[4]} {r[5]} {r[6]} {r[7]} {r[8]}")
+    out = "\n".join(lines)
+    print(out)
+    return out
+
+
+def cmd_orders_cancel_client_oids(
+    client_oids: str,
+    db_url: str = ":memory:",
+    relayer_type: str = "fake",
+    base_url: str = "https://clob.polymarket.com",
+    private_key: str = "",
+    chain_id: int = 137,
+    timeout_s: float = 10.0,
+) -> str:
+    """Cancel client orders by client_oid via engine+relayer and update DB statuses.
+
+    For safety, defaults to a FakeRelayer unless explicitly set. On real relayer, ensure
+    private_key is configured via secrets overlay or argument.
+    """
+    con = init_db(db_url)
+    # Build relayer
+    if relayer_type.lower() == "real":
+        rel = build_relayer(
+            "real",
+            base_url=base_url,
+            private_key=private_key,
+            dry_run=False,
+            chain_id=chain_id,
+            timeout_s=timeout_s,
+        )
+    else:
+        rel = FakeRelayer(fill_ratio=0.0)
+    eng = ExecutionEngine(rel, audit_db=con)
+    oids = [x.strip() for x in client_oids.split(",") if x.strip()]
+    eng.cancel_client_orders(oids)
+    out = f"canceled={len(oids)}"
+    print(out)
+    return out
+
+
 def cmd_migrate_timescale_print() -> str:
     """Print the optional Timescale migration SQL.
 
@@ -319,7 +496,7 @@ def cmd_migrate_timescale_print() -> str:
     return text
 
 
-def cmd_preflight(config_path: str) -> str:
+def cmd_preflight(config_path: str, as_json: bool = False) -> str:
     """Validate a service config TOML before enabling real trading.
 
     Checks:
@@ -356,9 +533,19 @@ def cmd_preflight(config_path: str) -> str:
         issues.append("no markets configured")
 
     if issues:
+        if as_json:
+            import json as _json
+            out = _json.dumps({"ok": False, "issues": issues})
+            print(out)
+            return out
         header = "INVALID: preflight checks failed"
         lines = [header] + [f" - {i}" for i in issues]
         out = "\n".join(lines)
+        print(out)
+        return out
+    if as_json:
+        import json as _json
+        out = _json.dumps({"ok": True})
         print(out)
         return out
     out = "OK: preflight passed"
@@ -450,7 +637,7 @@ async def cmd_quoter_run_ws_async(
     await runner.run(_aiter_translated_ws(url, max_messages, subscribe_message=sub), now_ms)
 
 
-async def cmd_run_service_from_config_async(config_path: str) -> None:
+async def cmd_run_service_from_config_async(config_path: str, summary_json_output: str | None = None) -> None:
     cfg = load_service_config(config_path)
     rel_kwargs = {
         "base_url": cfg.relayer_base_url,
@@ -473,6 +660,14 @@ async def cmd_run_service_from_config_async(config_path: str) -> None:
     # After completion, print a concise per-market summary for operator visibility
     try:
         cmd_status_summary(db_url=cfg.db_url)
+        if summary_json_output:
+            text = cmd_status_summary(db_url=cfg.db_url, as_json=True)
+            try:
+                p = Path(summary_json_output)
+                p.write_text(text, encoding="utf-8")
+                print(f"wrote summary JSON to {p}")
+            except Exception as e:  # noqa: BLE001
+                print(f"WARN: failed to write summary JSON: {e}")
     except Exception:
         pass
 
