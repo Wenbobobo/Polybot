@@ -56,6 +56,54 @@ def cmd_replay(file: str, market_id: str, db_url: str = ":memory:") -> None:
         ing.process(event)
 
 
+def cmd_markets_list(db_url: str = ":memory:", limit: int = 10, as_json: bool = False) -> str:
+    """List markets and their outcomes from DB, newest first by last_update.
+
+    For convenience when picking a live smoke-test target after a Gamma refresh.
+    """
+    con = connect_sqlite(db_url)
+    # Fall back to ORDER BY market_id if market_status missing rows
+    rows = con.execute(
+        "SELECT m.market_id, m.title, m.status, COALESCE(s.last_update_ts_ms, 0) as updated "
+        "FROM markets m LEFT JOIN market_status s ON m.market_id = s.market_id "
+        "ORDER BY updated DESC, m.market_id LIMIT ?",
+        (max(1, int(limit)),),
+    ).fetchall()
+    items = []
+    for mid, title, status, updated in rows:
+        outs = con.execute(
+            "SELECT outcome_id, name, tick_size, min_size FROM outcomes WHERE market_id = ? ORDER BY outcome_id",
+            (mid,),
+        ).fetchall()
+        items.append(
+            {
+                "market_id": mid,
+                "title": title,
+                "status": status,
+                "last_update_ts_ms": int(updated or 0),
+                "outcomes": [
+                    {
+                        "outcome_id": o[0],
+                        "name": o[1],
+                        "tick_size": float(o[2] or 0.0),
+                        "min_size": float(o[3] or 0.0),
+                    }
+                    for o in outs
+                ],
+            }
+        )
+    if as_json:
+        out = _json.dumps(items)
+        print(out)
+        return out
+    lines = ["market_id title status last_update_ms outcomes"]
+    for it in items:
+        lines.append(f"{it['market_id']} {it['title']} {it['status']} {it['last_update_ts_ms']} {len(it['outcomes'])}")
+    out = "\n".join(lines)
+    print(out)
+    return out
+
+
 def cmd_status(db_url: str = ":memory:", verbose: bool = False, as_json: bool = False) -> str:
     """Return a human-readable status summary string for markets in DB."""
     con = connect_sqlite(db_url)
@@ -92,6 +140,9 @@ def cmd_status(db_url: str = ":memory:", verbose: bool = False, as_json: bool = 
                 item["quotes_placed"] = get_counter_labelled("quotes_placed", {"market": mkt})
                 item["quotes_cancel_rate_limited"] = get_counter_labelled("quotes_cancel_rate_limited", {"market": mkt})
                 item["quotes_rate_limited"] = get_counter_labelled("quotes_rate_limited", {"market": mkt})
+                # Include per-market relayer event counters when verbose JSON is requested
+                item["relayer_rate_limited_events"] = get_counter_labelled("relayer_rate_limited_events", {"market": mkt})
+                item["relayer_timeouts_events"] = get_counter_labelled("relayer_timeouts_events", {"market": mkt})
             items.append(item)
         out = _json.dumps(items)
         print(out)
@@ -1001,6 +1052,7 @@ def cmd_relayer_live_order(
     chain_id: int = 137,
     timeout_s: float = 10.0,
     confirm_live: bool = False,
+    as_json: bool = False,
 ) -> str:
     """Place a single LIVE order via real relayer.
 
@@ -1047,9 +1099,20 @@ def cmd_relayer_live_order(
     for key in ("filled", "partial", "accepted", "rejected"):
         if status_counts.get(key):
             parts.append(f"{key}={status_counts[key]}")
-    out = " ".join(parts)
-    print(out)
-    return out
+    if as_json:
+        import json as _json
+        body = {
+            "placed": len(res.acks),
+            "accepted": accepted,
+            "statuses": status_counts,
+        }
+        out = _json.dumps(body)
+        print(out)
+        return out
+    else:
+        out = " ".join(parts)
+        print(out)
+        return out
 
 
 def cmd_tgbot_run_local(updates_file: str, market_id: str, outcome_yes_id: str, db_url: str = ":memory:") -> str:

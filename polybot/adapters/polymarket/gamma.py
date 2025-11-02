@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, List
+import json as _json
 
 
 @dataclass
@@ -27,18 +28,34 @@ class GammaClient:
         """
         normalized: List[Dict[str, Any]] = []
         for m in raw:
+            outs_norm: List[Dict[str, Any]] = []
+            raw_outs = m.get("outcomes", [])
+            # If outcomes is a JSON-encoded string, parse it
+            if isinstance(raw_outs, str):
+                try:
+                    parsed = _json.loads(raw_outs)
+                    raw_outs = parsed
+                except Exception:
+                    # treat as a single outcome id string
+                    raw_outs = [raw_outs]
+            for o in (raw_outs or []):
+                if isinstance(o, dict):
+                    oid = o.get("id") or o.get("outcome_id") or o.get("token")
+                    name = o.get("name") or o.get("title") or o.get("displayName") or ""
+                    outs_norm.append({
+                        "outcome_id": str(oid) if oid is not None else "",
+                        "name": str(name),
+                    })
+                elif isinstance(o, str):
+                    outs_norm.append({"outcome_id": o, "name": ""})
+                else:
+                    # Unknown shape; skip
+                    continue
             market = {
                 "market_id": str(m.get("id")),
                 "title": str(m.get("title", "")),
                 "status": str(m.get("status", "")),
-                "outcomes": [
-                    {
-                        "outcome_id": str(o.get("id")),
-                        "name": str(o.get("name", "")),
-                    }
-                    for o in m.get("outcomes", [])
-                ],
+                "outcomes": outs_norm,
             }
             normalized.append(market)
         return normalized
-

@@ -62,6 +62,11 @@ def main() -> None:
     p_ords.add_argument("--limit", type=int, default=5)
     p_ords.add_argument("--json", action="store_true")
 
+    p_ml = sub.add_parser("markets-list", help="List markets and outcomes from DB")
+    p_ml.add_argument("--db-url", default=":memory:")
+    p_ml.add_argument("--limit", type=int, default=10)
+    p_ml.add_argument("--json", action="store_true")
+
     p_health = sub.add_parser("health", help="Health check: staleness")
     p_health.add_argument("--db-url", default=":memory:")
     p_health.add_argument("--staleness-ms", type=int, default=30000)
@@ -80,8 +85,6 @@ def main() -> None:
     p_pf = sub.add_parser("preflight", help="Validate a service config TOML before running live")
     p_pf.add_argument("--config", required=True)
     p_pf.add_argument("--json", action="store_true")
-    p_cfgd = sub.add_parser("config-dump", help="Load a service TOML and print normalized JSON (secrets redacted)")
-    p_cfgd.add_argument("--config", required=True)
     p_cfgd = sub.add_parser("config-dump", help="Load a service TOML and print normalized JSON (secrets redacted)")
     p_cfgd.add_argument("--config", required=True)
 
@@ -271,6 +274,9 @@ def main() -> None:
             chain_id=args.chain_id,
             timeout_s=args.timeout_s,
         )
+    elif args.cmd == "markets-list":
+        from .commands import cmd_markets_list
+        cmd_markets_list(db_url=args.db_url, limit=args.limit, as_json=args.json)
     elif args.cmd == "status-top":
         cmd_status_top(db_url=args.db_url, limit=args.limit, as_json=args.json)
     elif args.cmd == "status-summary":
