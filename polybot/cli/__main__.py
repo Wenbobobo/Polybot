@@ -102,6 +102,17 @@ def main() -> None:
     p_msync.add_argument("--clob-page-limit", type=int, default=50)
     p_msync.add_argument("--clob-details-limit", type=int, default=10)
 
+    p_diag = sub.add_parser("diag-markets", help="Run bounded diagnostics for markets sync/resolve and write a log")
+    p_diag.add_argument("--out-file", required=True)
+    p_diag.add_argument("--url", required=True)
+    p_diag.add_argument("--db-url", default=":memory:")
+    p_diag.add_argument("--gamma-base", default="https://gamma-api.polymarket.com")
+    p_diag.add_argument("--clob-base", default="https://clob.polymarket.com")
+    p_diag.add_argument("--prefer", default="yes")
+    p_diag.add_argument("--timeout-s", type=float, default=8.0)
+    p_diag.add_argument("--clob-max-pages", type=int, default=1)
+    p_diag.add_argument("--clob-details-limit", type=int, default=3)
+
     p_health = sub.add_parser("health", help="Health check: staleness")
     p_health.add_argument("--db-url", default=":memory:")
     p_health.add_argument("--staleness-ms", type=int, default=30000)
@@ -371,6 +382,19 @@ def main() -> None:
             clob_page_limit=args.clob_page_limit,
             clob_details_limit=args.clob_details_limit,
         )
+    elif args.cmd == "diag-markets":
+        from .commands import cmd_diag_markets
+        cmd_diag_markets(
+            out_file=args.out_file,
+            url=args.url,
+            db_url=args.db_url,
+            gamma_base_url=args.gamma_base,
+            clob_base_url=args.clob_base,
+            prefer=args.prefer,
+            timeout_s=args.timeout_s,
+            clob_max_pages=args.clob_max_pages,
+            clob_details_limit=args.clob_details_limit,
+        )
     elif args.cmd == "status-top":
         cmd_status_top(db_url=args.db_url, limit=args.limit, as_json=args.json)
     elif args.cmd == "status-summary":
@@ -462,3 +486,27 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    p_msync = sub.add_parser("markets-sync", help="Sync markets from Gamma and enrich via CLOB tokens")
+    p_msync.add_argument("--db-url", default=":memory:")
+    p_msync.add_argument("--gamma-base", default="https://gamma-api.polymarket.com")
+    p_msync.add_argument("--no-clob", action="store_true")
+    p_msync.add_argument("--clob-base", default="https://clob.polymarket.com")
+    p_msync.add_argument("--no-clob-http", action="store_true")
+    p_msync.add_argument("--chain-id", type=int, default=137)
+    p_msync.add_argument("--timeout-s", type=float, default=10.0)
+    p_msync.add_argument("--once", action="store_true")
+    p_msync.add_argument("--interval-ms", type=int, default=30000)
+    p_msync.add_argument("--clob-max-pages", type=int, default=2)
+    p_msync.add_argument("--clob-page-limit", type=int, default=50)
+    p_msync.add_argument("--clob-details-limit", type=int, default=10)
+
+    p_diag = sub.add_parser("diag-markets", help="Run bounded diagnostics for markets sync/resolve and write a log")
+    p_diag.add_argument("--out-file", required=True)
+    p_diag.add_argument("--url", required=True)
+    p_diag.add_argument("--db-url", default=":memory:")
+    p_diag.add_argument("--gamma-base", default="https://gamma-api.polymarket.com")
+    p_diag.add_argument("--clob-base", default="https://clob.polymarket.com")
+    p_diag.add_argument("--prefer", default="yes")
+    p_diag.add_argument("--timeout-s", type=float, default=8.0)
+    p_diag.add_argument("--clob-max-pages", type=int, default=1)
+    p_diag.add_argument("--clob-details-limit", type=int, default=3)

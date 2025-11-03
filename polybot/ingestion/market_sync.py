@@ -15,19 +15,17 @@ class ClobClientProto(Protocol):
     def get_simplified_markets(self, cursor: Optional[str] = None) -> Dict[str, Any]: ...
 
 
-def enrich_markets_with_clob_tokens(markets: List[Dict[str, Any]], clob: ClobClientProto) -> int:
+def enrich_markets_with_clob_tokens(markets: List[Dict[str, Any]], clob: ClobClientProto, max_calls: int | None = None) -> int:
     """Enrich markets' outcomes with token_id via CLOB get_market(condition_id).
 
     Returns number of markets enriched.
     """
     enriched = 0
-    for m in markets:
-        cond = m.get("condition_id") or m.get("market_id") or m.get("id")
+    calls = 0\n    for m in markets:\n        if max_calls is not None and calls >= max_calls:\n            break\n        cond = m.get("condition_id") or m.get("market_id") or m.get("id")
         if not cond:
             continue
         try:
-            details = clob.get_market(str(cond))
-        except Exception:
+            details = clob.get_market(str(cond))\n        calls += 1\n        except Exception:
             continue
         tokens = details.get("tokens") or []
         if not tokens:
@@ -121,6 +119,7 @@ def clob_discover_markets(
     cursor: Optional[str] = None
     pages = 0
     details_calls = 0
+    processed = 0
     while pages < max_pages:
         try:
             res = clob.get_simplified_markets(cursor) if cursor else clob.get_simplified_markets()
@@ -128,6 +127,8 @@ def clob_discover_markets(
             break
         data = res.get("data") or []
         for m in data:
+            if page_limit and processed >= page_limit:
+                break
             cond = str(m.get("condition_id") or m.get("id") or "").strip()
             title = str(m.get("question") or m.get("title") or "").strip()
             if not cond:
@@ -162,8 +163,17 @@ def clob_discover_markets(
                 "status": "active",
                 "outcomes": outs,
             })
+            processed += 1
+        if page_limit and processed >= page_limit:
+            break
         cursor = res.get("next_cursor") or res.get("next") or None
         pages += 1
         if not cursor or cursor in ("", "LTE="):
             break
     return out
+
+
+
+
+
+

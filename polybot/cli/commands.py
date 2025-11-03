@@ -46,6 +46,7 @@ from polybot.adapters.polymarket.market_resolver import (
     parse_polymarket_url,
     choose_outcome,
 )
+from polybot.adapters.polymarket.clob_http import ClobHttpClient
 try:  # optional import for tests/real usage
     from polybot.adapters.polymarket.real_client import make_pyclob_client as _make_pyclob_client  # type: ignore
 except Exception:  # pragma: no cover
@@ -1264,6 +1265,7 @@ def cmd_markets_resolve(
     timeout_s: float = 10.0,
     as_json: bool = False,
     debug: bool = False,
+    http_timeout_s: float | None = None,
 ) -> str:
     """Resolve market_id and outcome_id from a Polymarket URL or title query.
 
@@ -1334,6 +1336,53 @@ def cmd_markets_resolve(
             if debug:
                 dbg["client_ctor_error"] = str(e)
             pass
+    # HTTP fallback: try a single markets page and match by slug or query (no per-market details)
+    if not results:
+        try:
+            http = ClobHttpClient(base_url=base_url, timeout=(http_timeout_s or timeout_s))
+            payload = http.get_simplified_markets(limit=100)
+            data = payload.get("data") or []
+            # Prepare needle
+            needle = ""
+            if url:
+                meta = parse_polymarket_url(url)
+                slug = (meta.get("slug") or "").split("/")[-1]
+                needle = slug.replace("-", " ").lower()
+            elif query:
+                needle = query.lower()
+            matches = []
+            for m in data:
+                q = str(m.get("question") or m.get("title") or m.get("slug") or "").lower()
+                if needle and needle in q:
+                    matches.append(m)
+            # Build minimal MarketInfo-like dicts from matches using clobTokenIds if present
+            for m in matches[:5]:
+                cond = str(m.get("condition_id") or m.get("id") or "").strip()
+                title = str(m.get("question") or m.get("title") or "")
+                outs = []
+                names = m.get("outcomes") if isinstance(m.get("outcomes"), list) else []
+                cti = m.get("clobTokenIds") if isinstance(m.get("clobTokenIds"), str) else ""
+                tokens_list = [x.strip() for x in cti.split(",") if x.strip()] if cti else []
+                if names and tokens_list and len(names) == len(tokens_list):
+                    for i, name in enumerate(names):
+                        outs.append({"outcome_id": tokens_list[i], "name": name})
+                else:
+                    for name in (names or []):
+                        outs.append({"outcome_id": "", "name": name})
+                sel_id = outs[0]["outcome_id"] if outs and outs[0]["outcome_id"] else None
+                sel_name = outs[0]["name"] if outs else None
+                results.append({
+                    "market_id": cond,
+                    "title": title,
+                    "outcomes": outs,
+                    "selected_outcome_id": sel_id,
+                    "selected_outcome_name": sel_name,
+                })
+            if debug:
+                dbg["http_fallback"] = {"matches": len(matches)}
+        except Exception as e:
+            if debug:
+                dbg["http_fallback_error"] = str(e)
     if not results:
         # Fallback hint path: provide parsed URL details so caller can run DB search
         hint = {}
@@ -1359,6 +1408,79 @@ def cmd_markets_resolve(
     out = _json.dumps(results)
     print(out)
     return out
+
+
+def cmd_diag_markets(
+    *,
+    out_file: str,
+    url: str,
+    db_url: str = ":memory:",
+    gamma_base_url: str = "https://gamma-api.polymarket.com",
+    clob_base_url: str = "https://clob.polymarket.com",
+    prefer: str = "yes",
+    timeout_s: float = 8.0,
+    clob_max_pages: int = 1,
+    clob_details_limit: int = 3,
+) -> str:
+    """Run a bounded diagnostic sequence and write a detailed log.
+
+    Steps:
+      1) Gamma-only sync (no CLOB), short timeout
+      2) CLOB HTTP fallback sync with tight budgets
+      3) markets-resolve with --debug
+    """
+    import time as _t
+    lines: list[str] = []
+    def _stamp(msg: str) -> None:
+        ts = _t.strftime("%Y-%m-%d %H:%M:%S")
+        lines.append(f"[{ts}] {msg}")
+
+    _stamp("diag start")
+    try:
+        _stamp("gamma-only sync")
+        cmd_markets_sync(
+            db_url=db_url,
+            gamma_base_url=gamma_base_url,
+            use_pyclob=False,
+            use_clob_http=False,
+            clob_base_url=clob_base_url,
+            timeout_s=timeout_s,
+            once=True,
+            clob_max_pages=0,
+        )
+    except Exception as e:  # noqa: BLE001
+        _stamp(f"gamma-only error: {e}")
+    try:
+        _stamp("clob-http sync (bounded)")
+        cmd_markets_sync(
+            db_url=db_url,
+            gamma_base_url=gamma_base_url,
+            use_pyclob=False,
+            use_clob_http=True,
+            clob_base_url=clob_base_url,
+            timeout_s=timeout_s,
+            once=True,
+            clob_max_pages=max(0, int(clob_max_pages)),
+            clob_details_limit=max(0, int(clob_details_limit)),
+        )
+    except Exception as e:  # noqa: BLE001
+        _stamp(f"clob-http error: {e}")
+    try:
+        _stamp("resolve --debug")
+        out = cmd_markets_resolve(url=url, prefer=prefer, as_json=True, debug=True, http_timeout_s=timeout_s)
+        lines.append(out)
+    except Exception as e:  # noqa: BLE001
+        _stamp(f"resolve error: {e}")
+    _stamp("diag end")
+    try:
+        p = Path(out_file)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("\n".join(lines), encoding="utf-8")
+    except Exception:
+        pass
+    text = "\n".join(lines)
+    print(text)
+    return text
 
 
 def cmd_markets_sync(
