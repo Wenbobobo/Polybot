@@ -32,6 +32,11 @@ This document lists the CLI commands available for Polybot, grouped by workflow.
   - `uv run python -m polybot.cli markets-list --db-url sqlite:///./polybot.db --limit 10 --json`
   - Search by title: `uv run python -m polybot.cli markets-search --db-url sqlite:///./polybot.db --query hype --json`
   - Show one market: `uv run python -m polybot.cli markets-show <market_id> --db-url sqlite:///./polybot.db --json`
+  - Resolve via CLOB (no DB needed):
+    - URL: `uv run python -m polybot.cli markets-resolve --url "https://polymarket.com/event/..." --prefer yes --json`
+    - Query: `uv run python -m polybot.cli markets-resolve --query "coinbase hype 2025" --prefer no --json`
+  - Search by title: `uv run python -m polybot.cli markets-search --db-url sqlite:///./polybot.db --query hype --json`
+  - Show one market: `uv run python -m polybot.cli markets-show <market_id> --db-url sqlite:///./polybot.db --json`
 
 ## Strategies
 - Spread quoter (WS simulate):

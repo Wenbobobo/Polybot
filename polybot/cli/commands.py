@@ -39,6 +39,15 @@ from polybot.storage.db import parse_db_url
 from polybot.adapters.polymarket.ctf import build_ctf, MergeRequest, SplitRequest
 from polybot.observability.metrics import reset as metrics_reset_fn
 import json as _json
+from polybot.adapters.polymarket.market_resolver import (
+    PyClobMarketSearcher,
+    parse_polymarket_url,
+    choose_outcome,
+)
+try:  # optional import for tests/real usage
+    from polybot.adapters.polymarket.real_client import make_pyclob_client as _make_pyclob_client  # type: ignore
+except Exception:  # pragma: no cover
+    _make_pyclob_client = None
 
 
 def init_db(db_url: str):
@@ -1238,6 +1247,78 @@ def cmd_markets_show(db_url: str, market_id: str, as_json: bool = False) -> str:
     for o in item["outcomes"]:
         lines.append(f"  - {o['outcome_id']} {o['name']} tick={o['tick_size']} min={o['min_size']}")
     out = "\n".join(lines)
+    print(out)
+    return out
+
+
+def cmd_markets_resolve(
+    *,
+    url: str | None = None,
+    query: str | None = None,
+    prefer: str | None = None,
+    use_pyclob: bool = True,
+    base_url: str = "https://clob.polymarket.com",
+    chain_id: int = 137,
+    timeout_s: float = 10.0,
+    as_json: bool = False,
+) -> str:
+    """Resolve market_id and outcome_id from a Polymarket URL or title query.
+
+    Prefers py-clob-client if available (read-only calls), else returns basic signals for fallback to DB search.
+    """
+    setup_logging()
+    results: list[dict] = []
+    if use_pyclob and _make_pyclob_client is not None:
+        try:
+            client = _make_pyclob_client(base_url=base_url, private_key="", dry_run=True, chain_id=chain_id, timeout_s=timeout_s)
+            searcher = PyClobMarketSearcher(client)
+            if url:
+                infos = searcher.search_by_url(url, limit=5)
+                if not infos:
+                    # fallback: use the last slug segment only
+                    from polybot.adapters.polymarket.market_resolver import parse_polymarket_url as _pmparse
+
+                    meta = _pmparse(url)
+                    slug = (meta.get("slug") or "")
+                    if slug:
+                        short = slug.split("/")[-1].replace("-", " ")
+                        infos = searcher.search_by_query(short, limit=5)
+            elif query:
+                infos = searcher.search_by_query(query, limit=5)
+            else:
+                infos = []
+            for mi in infos:
+                sel = choose_outcome(mi.outcomes, prefer=prefer)
+                results.append(
+                    {
+                        "market_id": mi.market_id,
+                        "title": mi.title,
+                        "outcomes": [{"outcome_id": o.outcome_id, "name": o.name} for o in mi.outcomes],
+                        "selected_outcome_id": sel.outcome_id if sel else None,
+                        "selected_outcome_name": sel.name if sel else None,
+                    }
+                )
+        except Exception:
+            pass
+    if not results:
+        # Fallback hint path: provide parsed URL details so caller can run DB search
+        hint = {}
+        if url:
+            hint = parse_polymarket_url(url)
+        results.append({"hint": hint, "message": "py-clob-client unavailable or no matches; try refresh-markets + markets-search"})
+    if as_json:
+        out = _json.dumps(results)
+        print(out)
+        return out
+    # Human-readable summary
+    if results and "market_id" in results[0]:
+        lines = ["market_id title selected_outcome"]
+        for r in results:
+            lines.append(f"{r['market_id']} {r['title']} {r.get('selected_outcome_id') or ''}")
+        out = "\n".join(lines)
+        print(out)
+        return out
+    out = _json.dumps(results)
     print(out)
     return out
 

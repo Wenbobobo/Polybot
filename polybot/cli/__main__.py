@@ -76,6 +76,17 @@ def main() -> None:
     p_mshow.add_argument("--db-url", default=":memory:")
     p_mshow.add_argument("--json", action="store_true")
 
+    p_mres = sub.add_parser("markets-resolve", help="Resolve market_id and outcome_id from URL or query (py-clob preferred)")
+    g = p_mres.add_mutually_exclusive_group(required=True)
+    g.add_argument("--url")
+    g.add_argument("--query")
+    p_mres.add_argument("--prefer", choices=["yes", "no"])
+    p_mres.add_argument("--no-pyclob", action="store_true")
+    p_mres.add_argument("--base-url", default="https://clob.polymarket.com")
+    p_mres.add_argument("--chain-id", type=int, default=137)
+    p_mres.add_argument("--timeout-s", type=float, default=10.0)
+    p_mres.add_argument("--json", action="store_true")
+
     p_health = sub.add_parser("health", help="Health check: staleness")
     p_health.add_argument("--db-url", default=":memory:")
     p_health.add_argument("--staleness-ms", type=int, default=30000)
@@ -316,6 +327,18 @@ def main() -> None:
     elif args.cmd == "markets-show":
         from .commands import cmd_markets_show
         cmd_markets_show(db_url=args.db_url, market_id=args.market_id, as_json=args.json)
+    elif args.cmd == "markets-resolve":
+        from .commands import cmd_markets_resolve
+        cmd_markets_resolve(
+            url=args.url,
+            query=args.query,
+            prefer=args.prefer,
+            use_pyclob=(not args.no_pyclob),
+            base_url=args.base_url,
+            chain_id=args.chain_id,
+            timeout_s=args.timeout_s,
+            as_json=args.json,
+        )
     elif args.cmd == "status-top":
         cmd_status_top(db_url=args.db_url, limit=args.limit, as_json=args.json)
     elif args.cmd == "status-summary":
