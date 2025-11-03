@@ -62,4 +62,4 @@ error.txt
 *.sqlite3
 config/secrets.local.toml
 *.db*
-report.txt
+recordings/

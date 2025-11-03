@@ -135,6 +135,13 @@ JSON Outputs
 - `status --json --verbose` 包含每市场的重同步比率、报价限流计数，以及新增的 `relayer_rate_limited_events` 与 `relayer_timeouts_events` 用于可视化与报警。
 - `relayer-live-order` 支持 `as_json`（需 `--confirm-live`），用于自动化联调/回归测试（返回下单与状态分布统计）。
 
+Diagnostics & Market Sync
+- 当 Gamma `/markets` 返回旧样本或缺少 `condition_id` 时，使用 CLOB 路径：
+  - 快速同步：`markets-sync --once --clob-max-pages 1 --clob-details-limit 0`（优先用 `/markets` 的 `clobTokenIds`，避免详情调用）
+  - 如需更完整 token，适度提高 `--clob-details-limit`（会增加时长）。
+- 解析：`markets-resolve --url ... --json --debug` 支持 HTTP 回退；`debug` 中的 `attempted_ids` 可用于定位 404 的 condition_id。
+- 诊断脚本：`diag-markets --out-file recordings/diag.txt --url ...` 顺序执行 Gamma-only、CLOB-HTTP 有界同步与解析，将输出写入日志文件供排错。
+
 Context Compression Tips
 - 若对话上下文受限，请优先参考：`docs/roadmap.md`、`docs/technical-plan.md`、`docs/handoff.md`、`docs/progress.md` 与 `README.md`；
 - 快速起步命令见 README；运维排障见 Runbook；验收流见 acceptance-walkthrough。

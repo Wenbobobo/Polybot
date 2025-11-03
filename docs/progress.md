@@ -96,6 +96,15 @@ This file tracks decisions and incremental progress.
   - `relayer-live-order` 新增 `as_json` 输出选项（在 `--confirm-live` 生效前提下），返回 `{"placed":N,"accepted":M,"statuses":{...}}`，方便脚本化联调与回归。
 - 测试：新增两项单测覆盖上述行为。
 
+2025-11-03
+- 目录与解析稳健性：
+  - 新增 CLOB HTTP 客户端（`ClobHttpClient`）用于直接访问 `/markets` 与 `/markets/{id}`，降低构造差异与超时风险。
+  - `markets-sync`：在 Gamma 返回缺少 condition_id 时自动回退到 CLOB 发现；加入分页与详情调用预算（`--clob-max-pages`、`--clob-details-limit`），避免长时间等待。
+  - 解析器：`markets-resolve` 支持 HTTP 回退（无需详情调用，优先用 `clobTokenIds`），`--debug` 输出导入/构造/HTTP 回退信息。
+  - Gamma 归一化：支持 `title=question|name|slug`，`market_id=condition_id|id|market_id|market`，`clobTokenIds` 与 `tokens` 的 outcome_id 映射。
+- 诊断脚本：
+  - 新增 `diag-markets` CLI：运行 Gamma-only 与 CLOB-HTTP 有界同步 + 解析调试，将结果写入指定日志文件，便于定位网络超时与字段错配问题。
+
 Next (queued)
 - py-clob-client 封装与 dry-run 联调（EOA 签名、拒单/超时/部分成交映射、速率控制/重试），完成后提醒配置钱包切实盘。
 - S3 回放覆盖：临界边际、复杂 outcomes、规则变更大样本；CLI verbose 输出净边际分解（fee/slip/safety）。
