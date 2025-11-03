@@ -21,14 +21,39 @@ class MarketInfo:
     outcomes: List[OutcomeInfo]
 
 
+def _sanitize_text(s: str) -> str:
+    # Replace curly quotes and similar with ASCII quotes; drop angle brackets and zero-widths
+    repl = {
+        "“": '"',
+        "”": '"',
+        "‘": "'",
+        "’": "'",
+        "＜": "<",
+        "＞": ">",
+    }
+    for k, v in repl.items():
+        s = s.replace(k, v)
+    # Remove angle brackets commonly used in docs
+    s = s.replace("<", "").replace(">", "")
+    # Collapse whitespace
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
 def parse_polymarket_url(url: str) -> Dict[str, Optional[str]]:
     """Parse a Polymarket URL to extract slug and tid when present.
 
     Returns {"slug": str|None, "tid": str|None}.
     """
-    m = _URL_RE.search(url or "")
+    raw = url or ""
+    s = _sanitize_text(raw)
+    m = _URL_RE.search(s)
     if not m:
-        return {"slug": None, "tid": None}
+        # Attempt to remove spaces entirely and retry (common paste artifact)
+        s2 = s.replace(" ", "")
+        m = _URL_RE.search(s2)
+        if not m:
+            return {"slug": None, "tid": None}
     return {"slug": m.group("slug"), "tid": m.group("tid")}
 
 
@@ -58,6 +83,20 @@ class PyClobMarketSearcher:
                 break
         return out
 
+    def _iter_full_markets(self, max_pages: int = 5) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        try:
+            # Some clients expose get_markets() with pagination or a full dump
+            res = self.client.get_markets()
+            data = res.get("data") if isinstance(res, dict) else None
+            if isinstance(data, list):
+                out.extend(data)
+            elif isinstance(res, list):
+                out.extend(res)
+        except Exception:
+            return []
+        return out
+
     @staticmethod
     def _match_score(question: str, needle: str) -> int:
         q = (question or "").lower()
@@ -70,12 +109,22 @@ class PyClobMarketSearcher:
         return len(qwords & nwords)
 
     def search_by_query(self, query: str, limit: int = 5) -> List[MarketInfo]:
+        # First pass: simplified markets
         sims = self._iter_simplified_markets()
         scored: List[Tuple[int, Dict[str, Any]]] = []
         for m in sims:
             score = self._match_score(str(m.get("question") or m.get("title") or ""), query)
             if score > 0:
                 scored.append((score, m))
+        # If no hits, try full markets (with tokens) as fallback
+        if not scored:
+            full = self._iter_full_markets()
+            for m in full:
+                score = self._match_score(str(m.get("question") or m.get("title") or ""), query)
+                if score > 0:
+                    # Normalize to simplified-like shape so _hydrate_market works
+                    cond = m.get("condition_id") or m.get("id") or m.get("market")
+                    scored.append((score, {"condition_id": cond, "question": m.get("question") or m.get("title") or ""}))
         scored.sort(key=lambda x: (-x[0], str(x[1].get("question") or "")))
         top = [m for _, m in scored[: max(1, limit)]]
         return [self._hydrate_market(mi) for mi in top]
@@ -116,4 +165,3 @@ def choose_outcome(outcomes: List[OutcomeInfo], prefer: Optional[str] = None) ->
             if o.name.strip().lower() == key:
                 return o
     return outcomes[0]
-

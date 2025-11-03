@@ -86,6 +86,19 @@ def main() -> None:
     p_mres.add_argument("--chain-id", type=int, default=137)
     p_mres.add_argument("--timeout-s", type=float, default=10.0)
     p_mres.add_argument("--json", action="store_true")
+    p_mres.add_argument("--debug", action="store_true")
+
+    p_msync = sub.add_parser("markets-sync", help="Sync markets from Gamma and enrich via CLOB tokens")
+    p_msync.add_argument("--db-url", default=":memory:")
+    p_msync.add_argument("--gamma-base", default="https://gamma-api.polymarket.com")
+    p_msync.add_argument("--no-clob", action="store_true")
+    p_msync.add_argument("--clob-base", default="https://clob.polymarket.com")
+    p_msync.add_argument("--no-clob-http", action="store_true")
+    p_msync.add_argument("--chain-id", type=int, default=137)
+    p_msync.add_argument("--timeout-s", type=float, default=10.0)
+    p_msync.add_argument("--once", action="store_true")
+    p_msync.add_argument("--interval-ms", type=int, default=30000)
+    p_msync.add_argument("--clob-max-pages", type=int, default=2)
 
     p_health = sub.add_parser("health", help="Health check: staleness")
     p_health.add_argument("--db-url", default=":memory:")
@@ -338,6 +351,21 @@ def main() -> None:
             chain_id=args.chain_id,
             timeout_s=args.timeout_s,
             as_json=args.json,
+            debug=args.debug,
+        )
+    elif args.cmd == "markets-sync":
+        from .commands import cmd_markets_sync
+        cmd_markets_sync(
+            db_url=args.db_url,
+            gamma_base_url=args.gamma_base,
+            use_pyclob=(not args.no_clob),
+            clob_base_url=args.clob_base,
+            use_clob_http=(not args.no_clob_http),
+            chain_id=args.chain_id,
+            timeout_s=args.timeout_s,
+            once=args.once or True,
+            interval_ms=args.interval_ms,
+            clob_max_pages=args.clob_max_pages,
         )
     elif args.cmd == "status-top":
         cmd_status_top(db_url=args.db_url, limit=args.limit, as_json=args.json)

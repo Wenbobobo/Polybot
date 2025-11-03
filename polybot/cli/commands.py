@@ -13,6 +13,8 @@ from polybot.ingestion.runner import run_orderbook_stream
 from polybot.ingestion.snapshot import SnapshotProvider, FakeSnapshotProvider
 from polybot.adapters.polymarket.ws import OrderbookWSClient
 from polybot.ingestion.markets import refresh_markets
+from polybot.ingestion.market_sync import sync_markets
+from polybot.adapters.polymarket.clob_http import ClobHttpClient
 from polybot.adapters.polymarket.gamma_http import GammaHttpClient
 import httpx
 import time
@@ -1261,6 +1263,7 @@ def cmd_markets_resolve(
     chain_id: int = 137,
     timeout_s: float = 10.0,
     as_json: bool = False,
+    debug: bool = False,
 ) -> str:
     """Resolve market_id and outcome_id from a Polymarket URL or title query.
 
@@ -1268,12 +1271,26 @@ def cmd_markets_resolve(
     """
     setup_logging()
     results: list[dict] = []
+    dbg: dict[str, object] = {}
+    # Try to dynamically import py-clob client if not already available (helps after fresh install)
+    if use_pyclob and _make_pyclob_client is None:
+        try:
+            from polybot.adapters.polymarket.real_client import make_pyclob_client as _reimp  # type: ignore
+
+            globals()["_make_pyclob_client"] = _reimp
+            if debug:
+                dbg["pyclob_import"] = "ok"
+        except Exception:
+            if debug:
+                dbg["pyclob_import"] = "import_failed"
+            pass
     if use_pyclob and _make_pyclob_client is not None:
         try:
             client = _make_pyclob_client(base_url=base_url, private_key="", dry_run=True, chain_id=chain_id, timeout_s=timeout_s)
             searcher = PyClobMarketSearcher(client)
             if url:
                 infos = searcher.search_by_url(url, limit=5)
+                used_fallback = False
                 if not infos:
                     # fallback: use the last slug segment only
                     from polybot.adapters.polymarket.market_resolver import parse_polymarket_url as _pmparse
@@ -1283,29 +1300,50 @@ def cmd_markets_resolve(
                     if slug:
                         short = slug.split("/")[-1].replace("-", " ")
                         infos = searcher.search_by_query(short, limit=5)
+                        used_fallback = True
             elif query:
                 infos = searcher.search_by_query(query, limit=5)
             else:
                 infos = []
+            attempted_ids: list[str] = []
+            if debug:
+                dbg["search"] = {
+                    "mode": "url" if url else ("query" if query else "none"),
+                    "used_fallback_on_slug": bool(url and used_fallback if 'used_fallback' in locals() else False),
+                    "results_count": len(infos),
+                }
             for mi in infos:
-                sel = choose_outcome(mi.outcomes, prefer=prefer)
-                results.append(
-                    {
-                        "market_id": mi.market_id,
-                        "title": mi.title,
-                        "outcomes": [{"outcome_id": o.outcome_id, "name": o.name} for o in mi.outcomes],
-                        "selected_outcome_id": sel.outcome_id if sel else None,
-                        "selected_outcome_name": sel.name if sel else None,
-                    }
-                )
-        except Exception:
+                try:
+                    sel = choose_outcome(mi.outcomes, prefer=prefer)
+                    results.append(
+                        {
+                            "market_id": mi.market_id,
+                            "title": mi.title,
+                            "outcomes": [{"outcome_id": o.outcome_id, "name": o.name} for o in mi.outcomes],
+                            "selected_outcome_id": sel.outcome_id if sel else None,
+                            "selected_outcome_name": sel.name if sel else None,
+                        }
+                    )
+                    attempted_ids.append(mi.market_id)
+                except Exception:
+                    attempted_ids.append(getattr(mi, 'market_id', ''))
+                    continue
+            if debug:
+                dbg["attempted_ids"] = attempted_ids
+        except Exception as e:
+            if debug:
+                dbg["client_ctor_error"] = str(e)
             pass
     if not results:
         # Fallback hint path: provide parsed URL details so caller can run DB search
         hint = {}
         if url:
             hint = parse_polymarket_url(url)
-        results.append({"hint": hint, "message": "py-clob-client unavailable or no matches; try refresh-markets + markets-search"})
+        msg = "py-clob-client unavailable or no matches; try refresh-markets + markets-search"
+        if debug:
+            results.append({"hint": hint, "message": msg, "debug": dbg})
+        else:
+            results.append({"hint": hint, "message": msg})
     if as_json:
         out = _json.dumps(results)
         print(out)
@@ -1321,6 +1359,64 @@ def cmd_markets_resolve(
     out = _json.dumps(results)
     print(out)
     return out
+
+
+def cmd_markets_sync(
+    *,
+    db_url: str,
+    gamma_base_url: str = "https://gamma-api.polymarket.com",
+    use_pyclob: bool = True,
+    use_clob_http: bool = True,
+    clob_base_url: str = "https://clob.polymarket.com",
+    chain_id: int = 137,
+    timeout_s: float = 10.0,
+    once: bool = True,
+    interval_ms: int = 30000,
+    clob_max_pages: int = 2,
+) -> str:
+    """Synchronize markets from Gamma and enrich outcomes with token IDs via CLOB.
+
+    - when once=True: run single sync and exit
+    - when once=False: loop with interval_ms between iterations
+    """
+    setup_logging()
+    import httpx
+
+    con = init_db(db_url)
+    ghc = GammaHttpClient(base_url=gamma_base_url, client=httpx.Client(base_url=gamma_base_url, timeout=timeout_s))
+    # Build optional CLOB client for enrichment
+    clob = None
+    if use_pyclob:
+        try:
+            from polybot.adapters.polymarket.real_client import make_pyclob_client as _reimp  # type: ignore
+
+            clob = _reimp(base_url=clob_base_url, private_key="", dry_run=True, chain_id=chain_id, timeout_s=timeout_s)
+        except Exception:
+            clob = None
+    # If pyclob not available and HTTP fallback allowed, use ClobHttpClient (implements same proto)
+    if clob is None and use_clob_http:
+        try:
+            clob = ClobHttpClient(base_url=clob_base_url, client=httpx.Client(base_url=clob_base_url, timeout=timeout_s))
+        except Exception:
+            clob = None
+
+    def _run_once() -> Dict[str, int]:
+        return sync_markets(con, ghc, clob, clob_max_pages=clob_max_pages)
+
+    if once:
+        stats = _run_once()
+        out = f"markets_sync source={stats.get('source','gamma')} gamma={stats['gamma_count']} enriched={stats['enriched']}"
+        print(out)
+        return out
+    else:
+        while True:
+            stats = _run_once()
+            print(f"markets_sync source={stats.get('source','gamma')} gamma={stats['gamma_count']} enriched={stats['enriched']}")
+            import time as _t
+
+            _t.sleep(max(1000, int(interval_ms)) / 1000.0)
+        # unreachable
+        return ""
 
 
 def cmd_tgbot_serve(
