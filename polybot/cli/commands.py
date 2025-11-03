@@ -1373,6 +1373,8 @@ def cmd_markets_sync(
     once: bool = True,
     interval_ms: int = 30000,
     clob_max_pages: int = 2,
+    clob_page_limit: int = 50,
+    clob_details_limit: int = 10,
 ) -> str:
     """Synchronize markets from Gamma and enrich outcomes with token IDs via CLOB.
 
@@ -1401,7 +1403,14 @@ def cmd_markets_sync(
             clob = None
 
     def _run_once() -> Dict[str, int]:
-        return sync_markets(con, ghc, clob, clob_max_pages=clob_max_pages)
+        return sync_markets(
+            con,
+            ghc,
+            clob,
+            clob_max_pages=clob_max_pages,
+            clob_page_limit=clob_page_limit,
+            clob_details_limit=clob_details_limit,
+        )
 
     if once:
         stats = _run_once()

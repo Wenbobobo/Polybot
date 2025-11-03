@@ -65,7 +65,14 @@ def _is_condition_like(val: Optional[str]) -> bool:
     return s.startswith("0x") and len(s) >= 18 and all(c in "0123456789abcdefABCDEFx" for c in s[:])
 
 
-def sync_markets(con: sqlite3.Connection, gamma: GammaClientProto, clob: Optional[ClobClientProto] = None, clob_max_pages: int = 2) -> Dict[str, int]:
+def sync_markets(
+    con: sqlite3.Connection,
+    gamma: GammaClientProto,
+    clob: Optional[ClobClientProto] = None,
+    clob_max_pages: int = 2,
+    clob_page_limit: int = 50,
+    clob_details_limit: int = 10,
+) -> Dict[str, int]:
     """Fetch markets from Gamma and optionally enrich outcomes with token IDs via CLOB.
 
     Persists to DB and returns stats dict.
@@ -81,7 +88,12 @@ def sync_markets(con: sqlite3.Connection, gamma: GammaClientProto, clob: Optiona
         return False
     if (not markets or not _has_condition_id(markets)) and clob is not None:
         try:
-            markets = clob_discover_markets(clob, max_pages=clob_max_pages)
+            markets = clob_discover_markets(
+                clob,
+                max_pages=clob_max_pages,
+                page_limit=clob_page_limit,
+                details_limit=clob_details_limit,
+            )
             stats["source"] = "clob"
         except Exception:
             pass
@@ -94,7 +106,12 @@ def sync_markets(con: sqlite3.Connection, gamma: GammaClientProto, clob: Optiona
     return stats
 
 
-def clob_discover_markets(clob: ClobClientProto, max_pages: int = 10) -> List[Dict[str, Any]]:
+def clob_discover_markets(
+    clob: ClobClientProto,
+    max_pages: int = 10,
+    page_limit: int = 50,
+    details_limit: int = 10,
+) -> List[Dict[str, Any]]:
     """Discover markets via CLOB client (simplified + details) and normalize.
 
     Returns a list of normalized dicts with market_id=condition_id, title=question,
@@ -103,6 +120,7 @@ def clob_discover_markets(clob: ClobClientProto, max_pages: int = 10) -> List[Di
     out: List[Dict[str, Any]] = []
     cursor: Optional[str] = None
     pages = 0
+    details_calls = 0
     while pages < max_pages:
         try:
             res = clob.get_simplified_markets(cursor) if cursor else clob.get_simplified_markets()
@@ -112,11 +130,25 @@ def clob_discover_markets(clob: ClobClientProto, max_pages: int = 10) -> List[Di
         for m in data:
             cond = str(m.get("condition_id") or m.get("id") or "").strip()
             title = str(m.get("question") or m.get("title") or "").strip()
-            try:
-                details = clob.get_market(cond)
-                tokens = details.get("tokens") or []
-            except Exception:
-                tokens = []
+            if not cond:
+                continue
+            # Prefer clobTokenIds + outcomes from simplified to avoid per-market details call
+            tokens: List[Dict[str, Any]] = []
+            cti = m.get("clobTokenIds")
+            outs_names = m.get("outcomes") if isinstance(m.get("outcomes"), list) else []
+            if isinstance(cti, str) and cti.strip() and outs_names:
+                toks = [x.strip() for x in cti.split(",") if x.strip()]
+                if len(toks) == len(outs_names):
+                    for i, tok in enumerate(toks):
+                        tokens.append({"token_id": tok, "name": outs_names[i]})
+            # Fallback to per-market details if we still lack tokens and under budget
+            if not tokens and details_calls < details_limit:
+                try:
+                    details = clob.get_market(cond)
+                    tokens = details.get("tokens") or []
+                    details_calls += 1
+                except Exception:
+                    tokens = []
             outs: List[Dict[str, Any]] = []
             for t in tokens:
                 if not isinstance(t, dict):

@@ -99,6 +99,8 @@ def main() -> None:
     p_msync.add_argument("--once", action="store_true")
     p_msync.add_argument("--interval-ms", type=int, default=30000)
     p_msync.add_argument("--clob-max-pages", type=int, default=2)
+    p_msync.add_argument("--clob-page-limit", type=int, default=50)
+    p_msync.add_argument("--clob-details-limit", type=int, default=10)
 
     p_health = sub.add_parser("health", help="Health check: staleness")
     p_health.add_argument("--db-url", default=":memory:")
@@ -366,6 +368,8 @@ def main() -> None:
             once=args.once or True,
             interval_ms=args.interval_ms,
             clob_max_pages=args.clob_max_pages,
+            clob_page_limit=args.clob_page_limit,
+            clob_details_limit=args.clob_details_limit,
         )
     elif args.cmd == "status-top":
         cmd_status_top(db_url=args.db_url, limit=args.limit, as_json=args.json)

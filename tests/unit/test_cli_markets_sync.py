@@ -43,7 +43,7 @@ def test_cmd_markets_sync_once_enriches(monkeypatch, tmp_path):
         lambda base_url, client=None: _StubGamma(gamma_markets),
         raising=True,
     )
-    def _sync_markets_stub(con, ghc, cl, clob_max_pages=2):
+    def _sync_markets_stub(con, ghc, cl, clob_max_pages=2, clob_page_limit=50, clob_details_limit=10):
         return {"gamma_count": len(gamma_markets), "enriched": 1, "source": "gamma"}
 
     monkeypatch.setattr("polybot.cli.commands.sync_markets", _sync_markets_stub, raising=True)

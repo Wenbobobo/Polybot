@@ -61,5 +61,5 @@ error.txt
 *.sqlite
 *.sqlite3
 config/secrets.local.toml
-*.db
+*.db*
 report.txt
