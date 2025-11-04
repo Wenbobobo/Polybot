@@ -21,11 +21,17 @@ def enrich_markets_with_clob_tokens(markets: List[Dict[str, Any]], clob: ClobCli
     Returns number of markets enriched.
     """
     enriched = 0
-    calls = 0\n    for m in markets:\n        if max_calls is not None and calls >= max_calls:\n            break\n        cond = m.get("condition_id") or m.get("market_id") or m.get("id")
+    calls = 0
+    for m in markets:
+        if max_calls is not None and calls >= max_calls:
+            break
+        cond = m.get("condition_id") or m.get("market_id") or m.get("id")
         if not cond:
             continue
         try:
-            details = clob.get_market(str(cond))\n        calls += 1\n        except Exception:
+            details = clob.get_market(str(cond))
+            calls += 1
+        except Exception:
             continue
         tokens = details.get("tokens") or []
         if not tokens:
@@ -97,7 +103,7 @@ def sync_markets(
             pass
     if clob is not None:
         try:
-            stats["enriched"] = enrich_markets_with_clob_tokens(markets, clob)
+            stats["enriched"] = enrich_markets_with_clob_tokens(markets, clob, max_calls=clob_details_limit)
         except Exception:
             stats["enriched"] = 0
     upsert_markets(con, markets)
@@ -171,6 +177,8 @@ def clob_discover_markets(
         if not cursor or cursor in ("", "LTE="):
             break
     return out
+
+
 
 
 

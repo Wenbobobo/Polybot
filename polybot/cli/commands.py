@@ -45,6 +45,7 @@ from polybot.adapters.polymarket.market_resolver import (
     PyClobMarketSearcher,
     parse_polymarket_url,
     choose_outcome,
+    OutcomeInfo,
 )
 from polybot.adapters.polymarket.clob_http import ClobHttpClient
 try:  # optional import for tests/real usage
@@ -1254,6 +1255,68 @@ def cmd_markets_show(db_url: str, market_id: str, as_json: bool = False) -> str:
     return out
 
 
+def _resolve_market_via_next_data(url: str | None, timeout_s: float) -> dict | None:
+    """Use the Polymarket web app's Next.js payload to resolve a market + outcomes."""
+    if not url:
+        return None
+    try:
+        import httpx
+        import json as _local_json
+    except Exception:  # pragma: no cover - dependency missing
+        return None
+    try:
+        resp = httpx.get(url, timeout=timeout_s)
+        resp.raise_for_status()
+    except Exception:
+        return None
+    text = resp.text
+    marker = "__NEXT_DATA__"
+    idx = text.find(marker)
+    if idx == -1:
+        return None
+    start = text.find("{", idx)
+    end = text.find("</script>", start)
+    if start == -1 or end == -1:
+        return None
+    try:
+        payload = _local_json.loads(text[start:end])
+    except Exception:
+        return None
+    queries = (
+        payload.get("props", {})
+        .get("pageProps", {})
+        .get("dehydratedState", {})
+        .get("queries", [])
+    )
+    for query in queries:
+        key = query.get("queryKey")
+        if not (isinstance(key, list) and key and key[0] == "/api/event/slug"):
+            continue
+        event = query.get("state", {}).get("data") or {}
+        markets = event.get("markets") or []
+        if not markets:
+            continue
+        market = markets[0]
+        outcomes = list(market.get("outcomes") or [])
+        tokens = market.get("clobTokenIds") or market.get("clob_token_ids") or []
+        if isinstance(tokens, str):
+            tokens = [tok.strip().strip('"') for tok in tokens.strip("[]").split(",") if tok.strip()]
+        resolved: list[dict[str, str]] = []
+        for idx_out, name in enumerate(outcomes):
+            tok = ""
+            if isinstance(tokens, list) and idx_out < len(tokens):
+                tok = str(tokens[idx_out])
+            resolved.append({"outcome_id": tok, "name": str(name)})
+        market_id = str(market.get("conditionId") or market.get("condition_id") or "")
+        title = str(market.get("question") or market.get("title") or event.get("title") or "")
+        return {
+            "market_id": market_id,
+            "title": title,
+            "outcomes": resolved,
+        }
+    return None
+
+
 def cmd_markets_resolve(
     *,
     url: str | None = None,
@@ -1266,6 +1329,7 @@ def cmd_markets_resolve(
     as_json: bool = False,
     debug: bool = False,
     http_timeout_s: float | None = None,
+    http_page_scans: int = 2,
 ) -> str:
     """Resolve market_id and outcome_id from a Polymarket URL or title query.
 
@@ -1336,12 +1400,26 @@ def cmd_markets_resolve(
             if debug:
                 dbg["client_ctor_error"] = str(e)
             pass
+    slug_for_url: str | None = None
+    if url:
+        parsed = parse_polymarket_url(url)
+        slug_for_url = (parsed.get("slug") or "").lower()
+    if results and slug_for_url:
+        segments = [seg.replace("-", " ").strip() for seg in slug_for_url.split("/") if seg]
+        segments = [seg.lower() for seg in segments if seg]
+        def _matches_slug(entry: dict) -> bool:
+            title = str(entry.get("title") or "").lower()
+            market_id = str(entry.get("market_id") or "").lower()
+            return any(seg in title or seg in market_id for seg in segments)
+        if segments and not any(_matches_slug(r) for r in results):
+            results.clear()
     # HTTP fallback: try a single markets page and match by slug or query (no per-market details)
     if not results:
         try:
             http = ClobHttpClient(base_url=base_url, timeout=(http_timeout_s or timeout_s))
             payload = http.get_simplified_markets(limit=100)
             data = payload.get("data") or []
+            cursor = payload.get("next_cursor")
             # Prepare needle
             needle = ""
             if url:
@@ -1351,10 +1429,21 @@ def cmd_markets_resolve(
             elif query:
                 needle = query.lower()
             matches = []
+            scans = 0
             for m in data:
                 q = str(m.get("question") or m.get("title") or m.get("slug") or "").lower()
                 if needle and needle in q:
                     matches.append(m)
+            # If no match, scan up to 2 more pages (bounded)
+            while not matches and cursor and scans < http_page_scans:
+                nxt = http.get_simplified_markets(cursor=cursor, limit=100)
+                data2 = nxt.get("data") or []
+                for m in data2:
+                    q = str(m.get("question") or m.get("title") or m.get("slug") or "").lower()
+                    if needle and needle in q:
+                        matches.append(m)
+                cursor = nxt.get("next_cursor")
+                scans += 1
             # Build minimal MarketInfo-like dicts from matches using clobTokenIds if present
             for m in matches[:5]:
                 cond = str(m.get("condition_id") or m.get("id") or "").strip()
@@ -1383,8 +1472,35 @@ def cmd_markets_resolve(
         except Exception as e:
             if debug:
                 dbg["http_fallback_error"] = str(e)
+    if not results and url:
+        next_payload = _resolve_market_via_next_data(url, timeout_s=http_timeout_s or timeout_s)
+        if next_payload:
+            outs = next_payload.get("outcomes") or []
+            sel = None
+            try:
+                sel = choose_outcome(
+                    [OutcomeInfo(outcome_id=o["outcome_id"], name=o["name"]) for o in outs],
+                    prefer=prefer,
+                )
+            except Exception:
+                sel = None
+            sel_id = sel.outcome_id if sel else (outs[0]["outcome_id"] if outs else None)
+            sel_name = sel.name if sel else (outs[0]["name"] if outs else None)
+            results.append(
+                {
+                    "market_id": next_payload.get("market_id"),
+                    "title": next_payload.get("title"),
+                    "outcomes": outs,
+                    "selected_outcome_id": sel_id,
+                    "selected_outcome_name": sel_name,
+                }
+            )
+            if debug:
+                dbg["next_data"] = {"used": True}
+        elif debug:
+            dbg["next_data"] = {"used": False}
+
     if not results:
-        # Fallback hint path: provide parsed URL details so caller can run DB search
         hint = {}
         if url:
             hint = parse_polymarket_url(url)
@@ -1583,3 +1699,8 @@ def cmd_tgbot_serve(
     except KeyboardInterrupt:
         stop_tg_server(server)
     return actual_port
+
+
+
+
+

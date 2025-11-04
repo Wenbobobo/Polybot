@@ -66,7 +66,7 @@ def run(
 
     # 2) resolve via HTTP fallback (no details)
     log("resolve: http fallback --debug")
-    resolved = cmd_markets_resolve(url=url, prefer=prefer, as_json=True, debug=True, http_timeout_s=timeout_s)
+    resolved = cmd_markets_resolve(url=url, prefer=prefer, as_json=True, debug=True, http_timeout_s=timeout_s, http_page_scans=10)
     logs.append(resolved)
     try:
         arr = json.loads(resolved)
@@ -159,4 +159,3 @@ if __name__ == "__main__":
         out_file=args.out_file,
         timeout_s=args.timeout_s,
     )
-
