@@ -21,3 +21,4 @@ def test_service_config_parses_relayer_type(tmp_path: Path):
     c = load_service_config(str(cfg))
     assert c.relayer_type == "real"
     assert c.relayer_dry_run is True
+    assert c.relayer_builder is None

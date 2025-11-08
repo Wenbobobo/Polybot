@@ -1,12 +1,22 @@
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Dict, Any
 from dataclasses import dataclass
 from pathlib import Path
 import tomllib
 
 from .runner import MarketSpec
 from polybot.strategy.spread import SpreadParams
+
+
+@dataclass
+class RelayerBuilderConfig:
+    mode: str = "local"
+    url: Optional[str] = None
+    token: Optional[str] = None
+    api_key: Optional[str] = None
+    api_secret: Optional[str] = None
+    api_passphrase: Optional[str] = None
 
 
 @dataclass
@@ -24,6 +34,7 @@ class ServiceConfig:
     engine_retry_sleep_ms: int = 0
     relayer_max_retries: int = 0
     relayer_retry_sleep_ms: int = 0
+    relayer_builder: Optional[RelayerBuilderConfig] = None
 
 
 def _parse_spread(obj: dict | None) -> SpreadParams:
@@ -43,6 +54,18 @@ def _parse_spread(obj: dict | None) -> SpreadParams:
 
 def load_service_config(path: str | Path) -> ServiceConfig:
     p = Path(path)
+    def _deep_merge(dst: Dict[str, Any], src: Dict[str, Any]) -> Dict[str, Any]:
+        for key, val in src.items():
+            if (
+                key in dst
+                and isinstance(dst[key], dict)
+                and isinstance(val, dict)
+            ):
+                _deep_merge(dst[key], val)
+            else:
+                dst[key] = val
+        return dst
+
     data = tomllib.load(open(p, "rb"))
     # Optional secrets overlay from a sibling secrets.local.toml (gitignored by default)
     secrets_path = p.parent / "secrets.local.toml"
@@ -50,11 +73,10 @@ def load_service_config(path: str | Path) -> ServiceConfig:
         try:
             secrets = tomllib.load(open(secrets_path, "rb"))
             # shallow merge only for [relayer]
-            rel_overlay = (secrets.get("relayer", {}) or {})
-            if rel_overlay:
+            rel_overlay = secrets.get("relayer")
+            if isinstance(rel_overlay, dict):
                 base_rel = (data.get("relayer", {}) or {}).copy()
-                base_rel.update(rel_overlay)
-                data["relayer"] = base_rel
+                data["relayer"] = _deep_merge(base_rel, rel_overlay)
         except Exception:
             pass
     svc = data.get("service", {})
@@ -66,6 +88,17 @@ def load_service_config(path: str | Path) -> ServiceConfig:
     relayer_private_key = rel.get("private_key", "")
     relayer_chain_id = int(rel.get("chain_id", 137))
     relayer_timeout_s = float(rel.get("timeout_s", 10.0))
+    builder_cfg = None
+    builder_raw = rel.get("builder")
+    if isinstance(builder_raw, dict) and builder_raw:
+        builder_cfg = RelayerBuilderConfig(
+            mode=str(builder_raw.get("mode", "local")),
+            url=builder_raw.get("url"),
+            token=builder_raw.get("token"),
+            api_key=builder_raw.get("api_key"),
+            api_secret=builder_raw.get("api_secret"),
+            api_passphrase=builder_raw.get("api_passphrase"),
+        )
     eng = svc
     engine_max_retries = int(eng.get("engine_max_retries", 0))
     engine_retry_sleep_ms = int(eng.get("engine_retry_sleep_ms", 0))
@@ -99,4 +132,5 @@ def load_service_config(path: str | Path) -> ServiceConfig:
         engine_retry_sleep_ms=engine_retry_sleep_ms,
         relayer_max_retries=relayer_max_retries,
         relayer_retry_sleep_ms=relayer_retry_sleep_ms,
+        relayer_builder=builder_cfg,
     )

@@ -26,6 +26,7 @@ class OrderAck:
     remaining_size: float = 0.0
     status: Literal["accepted", "rejected", "filled", "partial"] = "accepted"
     client_order_id: Optional[str] = None
+    error: Optional[str] = None
 
 
 @dataclass

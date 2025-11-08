@@ -183,6 +183,11 @@ def make_pyclob_client(base_url: str, private_key: str, dry_run: bool = True, **
     signature_type = _pop_known(extras, "signature_type", None)
     funder = _pop_known(extras, "funder", None)
     builder_config = _pop_known(extras, "builder_config", None)
+    builder_api_key = _pop_known(extras, "builder_api_key")
+    builder_api_secret = _pop_known(extras, "builder_api_secret")
+    builder_api_passphrase = _pop_known(extras, "builder_api_passphrase")
+    builder_remote_url = _pop_known(extras, "builder_remote_url")
+    builder_remote_token = _pop_known(extras, "builder_remote_token")
 
     params = {}
     has_var_kw = False
@@ -227,8 +232,32 @@ def make_pyclob_client(base_url: str, private_key: str, dry_run: bool = True, **
         ctor_kwargs["signature_type"] = signature_type
     if funder is not None and ("funder" in params or has_var_kw):
         ctor_kwargs["funder"] = funder
-    if builder_config is not None and ("builder_config" in params or has_var_kw):
-        ctor_kwargs["builder_config"] = builder_config
+    builder_config_obj = builder_config
+    if builder_config_obj is None:
+        try:
+            from py_builder_signing_sdk.config import BuilderConfig, BuilderApiKeyCreds, RemoteBuilderConfig  # type: ignore
+        except Exception:
+            BuilderConfig = None  # type: ignore
+            BuilderApiKeyCreds = None  # type: ignore
+            RemoteBuilderConfig = None  # type: ignore
+        if BuilderConfig is not None:
+            if builder_api_key and builder_api_secret and builder_api_passphrase:
+                builder_config_obj = BuilderConfig(
+                    local_builder_creds=BuilderApiKeyCreds(
+                        key=builder_api_key,
+                        secret=builder_api_secret,
+                        passphrase=builder_api_passphrase,
+                    )
+                )
+            elif builder_remote_url:
+                builder_config_obj = BuilderConfig(
+                    remote_builder_config=RemoteBuilderConfig(
+                        url=builder_remote_url,
+                        token=builder_remote_token,
+                    )
+                )
+    if builder_config_obj is not None and ("builder_config" in params or has_var_kw):
+        ctor_kwargs["builder_config"] = builder_config_obj
     # Ignore remaining extras silently (e.g., retry configs).
 
     if private_key and chain_id is None and ("chain_id" in params):

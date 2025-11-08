@@ -48,14 +48,20 @@ class PyClobRelayer:
         raw = self._client.place_orders(payload)
         acks: List[OrderAck] = []
         for a in raw:
+            status_value = str(self._resp_get(a, "status", default="accepted"))
+            error_msg = self._resp_get(a, "error", "errorMsg")
+            accepted_flag = self._resp_get(a, "accepted")
+            if accepted_flag is None:
+                accepted_flag = status_value not in ("rejected", "failed", "", None)
             acks.append(
                 OrderAck(
                     order_id=str(self._resp_get(a, "order_id", "orderId", default="")),
-                    accepted=bool(self._resp_get(a, "accepted", default=False) or (self._resp_get(a, "status") not in ("rejected", False, None))),
+                    accepted=bool(accepted_flag) and not error_msg,
                     filled_size=float(self._resp_get(a, "filled_size", "filledSize", default=0.0) or 0.0),
                     remaining_size=float(self._resp_get(a, "remaining_size", "remainingSize", default=0.0) or 0.0),
-                    status=str(self._resp_get(a, "status", default="accepted")),
+                    status=status_value,
                     client_order_id=self._resp_get(a, "client_order_id", "clientOrderId"),
+                    error=error_msg,
                 )
             )
         return acks

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 
 from polybot.storage.db import connect_sqlite, enable_wal, connect
 from polybot.storage import schema as schema_mod
@@ -59,6 +60,41 @@ def init_db(db_url: str):
     enable_wal(con)
     schema_mod.create_all(con)
     return con
+
+
+def _builder_kwargs_from_env() -> Dict[str, str]:
+    env = os.environ
+    out: Dict[str, str] = {}
+    api_key = env.get("POLY_BUILDER_API_KEY")
+    api_secret = env.get("POLY_BUILDER_SECRET")
+    api_passphrase = env.get("POLY_BUILDER_PASSPHRASE")
+    if api_key and api_secret and api_passphrase:
+        out["builder_api_key"] = api_key
+        out["builder_api_secret"] = api_secret
+        out["builder_api_passphrase"] = api_passphrase
+    remote_url = env.get("POLY_BUILDER_REMOTE_URL")
+    if remote_url:
+        out["builder_remote_url"] = remote_url
+        token = env.get("POLY_BUILDER_TOKEN")
+        if token:
+            out["builder_remote_token"] = token
+    return out
+
+
+def _builder_kwargs_from_cfg(cfg) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    builder = getattr(cfg, "relayer_builder", None)
+    if not builder:
+        return out
+    if builder.api_key and builder.api_secret and builder.api_passphrase:
+        out["builder_api_key"] = builder.api_key
+        out["builder_api_secret"] = builder.api_secret
+        out["builder_api_passphrase"] = builder.api_passphrase
+    if builder.url:
+        out["builder_remote_url"] = builder.url
+        if builder.token:
+            out["builder_remote_token"] = builder.token
+    return out
 
 
 def cmd_replay(file: str, market_id: str, db_url: str = ":memory:") -> None:
@@ -526,6 +562,7 @@ def cmd_orders_cancel_client_oids(
     con = init_db(db_url)
     # Build relayer
     if relayer_type.lower() == "real":
+        builder_kwargs = _builder_kwargs_from_env()
         rel = build_relayer(
             "real",
             base_url=base_url,
@@ -533,6 +570,7 @@ def cmd_orders_cancel_client_oids(
             dry_run=False,
             chain_id=chain_id,
             timeout_s=timeout_s,
+            **builder_kwargs,
         )
     else:
         rel = FakeRelayer(fill_ratio=0.0)
@@ -718,6 +756,10 @@ async def cmd_run_service_from_config_async(config_path: str, summary_json_outpu
         "max_retries": cfg.relayer_max_retries,
         "retry_sleep_ms": cfg.relayer_retry_sleep_ms,
     }
+    builder_kwargs = _builder_kwargs_from_cfg(cfg)
+    env_builder = _builder_kwargs_from_env()
+    builder_kwargs.update(env_builder)
+    rel_kwargs.update(builder_kwargs)
     sr = ServiceRunner(
         db_url=cfg.db_url,
         params=cfg.default_spread,
@@ -961,8 +1003,9 @@ def cmd_relayer_dry_run(market_id: str, outcome_id: str, side: str, price: float
     If the real client is unavailable, prints a helpful error.
     """
     setup_logging()
+    builder_kwargs = _builder_kwargs_from_env()
     try:
-        rel = build_relayer("real", base_url=base_url, private_key=private_key, dry_run=True, chain_id=chain_id, timeout_s=timeout_s)
+        rel = build_relayer("real", base_url=base_url, private_key=private_key, dry_run=True, chain_id=chain_id, timeout_s=timeout_s, **builder_kwargs)
     except Exception as e:
         # If the relayer is unavailable and PK is clearly invalid, provide a clearer hint
         try:
@@ -990,7 +1033,8 @@ def cmd_relayer_dry_run(market_id: str, outcome_id: str, side: str, price: float
 
 def _try_build_real_relayer(base_url: str, private_key: str, chain_id: int = 137, timeout_s: float = 10.0):
     try:
-        return build_relayer("real", base_url=base_url, private_key=private_key, dry_run=False, chain_id=chain_id, timeout_s=timeout_s)
+        builder_kwargs = _builder_kwargs_from_env()
+        return build_relayer("real", base_url=base_url, private_key=private_key, dry_run=False, chain_id=chain_id, timeout_s=timeout_s, **builder_kwargs)
     except Exception as e:  # noqa: BLE001
         return f"relayer unavailable: {e}"
 
@@ -1072,6 +1116,7 @@ def cmd_relayer_live_order(
     timeout_s: float = 10.0,
     confirm_live: bool = False,
     as_json: bool = False,
+    **builder_kwargs,
 ) -> str:
     """Place a single LIVE order via real relayer.
 
@@ -1082,6 +1127,8 @@ def cmd_relayer_live_order(
         msg = "live order blocked: add --confirm-live to proceed"
         print(msg)
         return msg
+    env_builder = _builder_kwargs_from_env()
+    builder_kwargs = {**builder_kwargs, **env_builder}
     try:
         rel = build_relayer(
             "real",
@@ -1090,6 +1137,7 @@ def cmd_relayer_live_order(
             dry_run=False,
             chain_id=chain_id,
             timeout_s=timeout_s,
+            **builder_kwargs,
         )
     except Exception as e:  # noqa: BLE001
         msg = f"relayer unavailable: {e}"
@@ -1164,6 +1212,9 @@ def cmd_relayer_live_order_from_config(
     Reads relayer settings from TOML (including secrets overlay), then delegates to cmd_relayer_live_order.
     """
     cfg = load_service_config(config_path)
+    builder_kwargs = _builder_kwargs_from_cfg(cfg)
+    env_kwargs = _builder_kwargs_from_env()
+    builder_kwargs.update(env_kwargs)
     return cmd_relayer_live_order(
         market_id=market_id,
         outcome_id=outcome_id,
@@ -1176,6 +1227,7 @@ def cmd_relayer_live_order_from_config(
         timeout_s=cfg.relayer_timeout_s,
         confirm_live=confirm_live,
         as_json=as_json,
+        **builder_kwargs,
     )
 
 
