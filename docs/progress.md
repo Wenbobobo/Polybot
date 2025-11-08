@@ -2,12 +2,19 @@
 
 This file tracks decisions and incremental progress.
 
+2025-11-09
+- Added `builder-health` CLI: loads service config + secrets, instantiates real relayer (dry-run) and surfaces builder type/source/address/can_builder_auth with JSON support for automation; failure paths now exit with actionable errors.
+- Preflight hardened for real relayer configs: invalid/missing builder credentials now fail fast alongside the existing private_key/chain_id checks; unit tests cover the new validation plus builder-health happy/edge cases.
+- Documentation refresh: deployment guide highlights builder funding address and the new health command; runbook health section now includes the builder validation routine.
+- Strengthened PyClob adapter and retry instrumentation: PyClobRelayer now pads missing relayer responses, respects `success` / `errorMsg`, and new tests cover error mapping. RetryRelayer classifies builder-auth failures into new metrics (`relayer_builder_errors_total`, per-market labelled counters) which surface via `status`, `status-top`, `status-summary`, and `smoke-live` outputs.
+
 2025-11-04
 - Added bridging adapter so `build_relayer("real")` wraps raw `ClobClient` instances, including support for `timeInForce` mapping and API credential bootstrap; CLI dry-run/live flows now operate against py-clob-client installs without modifying library code.
 - Hardened `make_pyclob_client` argument forwarding (chain_id/timeout aliases, introspection for differing constructors) while keeping read-only scans positional-only; raises early when a private key is supplied without chain_id.
 - Enhanced `markets-resolve` with a Next.js (`__NEXT_DATA__`) fallback to resolve modern markets by slug when the CLOB index misses them; unit test covers the new path.
 - Verified live relayer path end-to-end against Polymarket production: executed buy (0.39, size 5) and sell (0.37, size 5) on market `0x1fbeca90...`, confirming orders accepted after Cloudflare clearance.
 - Added Builder API support: service/CLI configs can specify local or remote builder credentials, `make_pyclob_client` wires them into `ClobClient` via `BuilderConfig`, and CLI helpers read either `[relayer.builder]` or `POLY_BUILDER_*` env vars. Unit tests cover config overlays, env extraction, and builder wiring.
+- CLI live-order commands now accept `--url` to auto-resolve market/outcome IDs (internally calling the same resolver), preventing “market not found” errors due to manual ID mistakes. Tests confirm URL resolution for both direct and config-based flows.
 
 2025-10-30
 - Agreed scope: Polymarket-only, prioritize data+storage foundations.

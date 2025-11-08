@@ -12,6 +12,8 @@ This runbook covers common operational tasks for Polybot MVP in Phase 1.
   - `engine_execute_plan_ms_sum`, `engine_execute_plan_count`
   - `ingestion_msg_applied`, `ingestion_msg_invalid`
   - `ingestion_resync_first_delta`, `ingestion_resync_gap`, `ingestion_resync_checksum`
+- Builder readiness:
+  - `uv run python -m polybot.cli builder-health --config config/service.toml --json` verifies local/remote Builder credentials, signer地址与 `can_builder_auth` 状态；失败会列出缺失字段或 relayer 构造问题。
 
 ## Retention & Storage
 - Periodic snapshots and event pruning run via the scheduler. For manual control:

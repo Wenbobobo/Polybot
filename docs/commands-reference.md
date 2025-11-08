@@ -19,6 +19,7 @@ This document lists the CLI commands available for Polybot, grouped by workflow.
 - Live order（严格遵循参数顺序：`market_id outcome_id side price size`）：
   - 直接指定：`uv run python -m polybot.cli relayer-live-order <mid> <oid> buy 0.39 5 --base-url ... --private-key ... --confirm-live --as-json`
   - 读取配置：`uv run python -m polybot.cli relayer-live-order-config --config config/service.toml <mid> <oid> buy 0.39 5 --confirm-live --json`
+  - 可追加 `--url "https://polymarket.com/event/..."` 自动解析 IDs（命令中的 `<mid> <oid>` 会被覆盖）
   - 如输出 `invalid choice (choose from buy, sell)`，表示参数顺序错误，请重新输入。
 
 ## Service

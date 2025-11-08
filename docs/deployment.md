@@ -31,6 +31,11 @@
    setx POLY_BUILDER_TOKEN "<token>"         # 可选
    ```
    CLI 会优先读取环境变量；空缺的字段再由 `secrets.local.toml` 补齐。
+5. **验证 builder 凭证**  
+   ```
+   uv run python -m polybot.cli builder-health --config config/service.toml --json
+   ```
+   正常输出 `builder ok...` 代表 py-clob-client + BuilderConfig 可以正确生成签名；若失败会给出缺失字段或凭证错误的提示。
 
 ---
 
@@ -53,20 +58,23 @@
 ---
 
 ## 4. 实盘最小流（Builder 模式）
-> ⚠️ 操作前请确保 Builder 账户中已有 USDC。Polymarket Builder 账户与钱包地址不同，资金需单独转入 Builder Settings 中显示的地址。
+> ⚠️ 操作前请确保 Builder 账户中已有 USDC。Polymarket Builder 使用你头像下方的 Profile Address（亦即 `funder`），需要把 USDC 充值到该地址后，Builder API 才能代表你下单。
 
 1. **确保配置为实盘**：在 `config/secrets.local.toml` 中设置 `dry_run = false`。
 2. **执行一次交易烟雾测试**（最常用命令）：
-   ```
-   uv run python -m polybot.cli relayer-live-order-config \
-       --config config/service.toml \
-       0x1fbeca90a39253081b032a9990da1cb5b25573d4e213327b5b0f0c222b05be6a \
-       37902884120561856159354666911594986421517777792635262864250023116967352650864 \
-       buy 0.39 5 \
-       --confirm-live \
-       --json
-   ```
-   - **参数顺序必须是**：`market_id outcome_id side price size`。若顺序错误，CLI 会提示 “invalid choice: ... (choose from buy, sell)”。
+  ```
+  uv run python -m polybot.cli relayer-live-order-config \
+      --config config/service.toml \
+      0x1fbeca90a39253081b032a9990da1cb5b25573d4e213327b5b0f0c222b05be6a \
+      37902884120561856159354666911594986421517777792635262864250023116967352650864 \
+      buy 0.39 5 \
+      --confirm-live \
+      --json
+  ```
+  - **参数顺序必须是**：`market_id outcome_id side price size`。若顺序错误，CLI 会提示 “invalid choice: ... (choose from buy, sell)”。
+  - 如果只想提供网页 URL，可追加 `--url "https://polymarket.com/event/..."`
+    - 示例：`... --confirm-live --url "https://polymarket.com/event/first-to-5k-gold-or-eth?tid=..." --json`
+    - 自动解析 URL 并覆盖 `market_id/outcome_id`，避免再手动查 IDs。
    - `--confirm-live` 是安全保障，默认未加该参数会拒绝实盘下单。
 3. **平仓示例**（sell 命令与上方相同，只需改 `side`）：
    ```
