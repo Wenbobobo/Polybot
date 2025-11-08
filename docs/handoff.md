@@ -6,8 +6,9 @@ Scope & Status
   - Strategies: Dutch Book (detector/planner + DutchRunner), Spread Capture (planner + quoter loop)
   - Execution engine with FakeRelayer; orders/fills/audits persisted; idempotency (plan_id + client_oid)
   - Observability: JSON logs, in-process metrics (labelled), status/health/status-top CLIs; Prometheus exporter + HTTP /metrics
-- Service runner for multi-market simulation; config supports default/per-market spread params；relayer config（type/base_url/dry_run/private_key）
+  - Service runner for multi-market simulation; config supports default/per-market spread params；relayer config（type/base_url/dry_run/private_key）
   - Real relayer wiring now auto-wraps py-clob-client instances (bridging `create_order`/`post_orders` to our adapter and forwarding timeout/chain_id aliases); CLI resolve flow gains Next.js (`__NEXT_DATA__`) fallback for modern market slugs. Live smoke validated with a 0.39 buy / 0.37 sell (size 5) on market `0x1fbeca9…`.
+  - Builder signing: `[relayer.builder]` + `POLY_BUILDER_*` env vars configure local (API key/secret/passphrase) or remote (URL/token) builder modes; `build_relayer` now passes builder configs through to py-clob-client so orders gain proper attribution without manual signing.
 
 What’s Next (Priority)
 1) Wire real Polymarket relayer (py-clob-client)

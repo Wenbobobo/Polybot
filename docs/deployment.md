@@ -1,152 +1,117 @@
-# 部署指南（第一阶段：仅限 Polymarket）
+# 部署指南
 
-本指南解释了如何在 Windows 环境中使用 PowerShell 和 uv 设置、运行并操作 Polybot MVP 组件。本阶段重点关注数据摄取、存储、策略模拟和本地工具。在此阶段中，尚未启用与实时中继器（relayer）进行交易的功能。
+本文提供可操作的“最短路径”部署流程，其余详细命令已迁移到《命令大全》（docs/commands-reference.md）。假设你在 Windows + PowerShell 环境中使用 uv。
 
-## 先决条件
-- 操作系统：Windows 10/11
-- Python 版本：3.12（uv 将自动管理虚拟环境）
-- PowerShell
-- uv 包管理器
- - （可选，真实 relayer）py-clob-client：仅在你要联调真实 relayer（仍可 dry_run）时安装。
+---
 
-## 仓库设置
-1. 克隆仓库并在项目根目录中打开 PowerShell。
-2. 安装依赖项：
-   - `uv sync`
-3. 验证测试套件：
-   - `uv run pytest -q`
+## 1. 环境准备
+| 步骤 | 指令 |
+| --- | --- |
+| 克隆仓库 & 切换到项目根目录 | （自行完成） |
+| 安装依赖 | `uv sync` |
+| 可选：安装真实 relayer 依赖 | `uv add py-clob-client py-builder-signing-sdk` |
+| 自检 | `uv run pytest -q` |
 
-## 配置
-- 推荐使用“单文件配置 + 机密覆盖”模式：
-  - 主配置：`config/service.example.toml`（复制为 `service.toml` 并按需修改）
-    - 包含 `[service]`、`[service.spread]`、`[relayer]` 与 `[[market]]` 等节。
-  - 机密覆盖（gitignored）：与主配置同目录的 `secrets.local.toml`
-    - 覆盖 `[relayer]` 字段（例如 `private_key`、`dry_run=false`）。
-- 说明：历史上的多份示例配置（如 `config/default.toml` 等）已合并并移除；仅保留 `service.toml` 与 `secrets.local.toml` 组合（示例见 `service.example.toml` 和 `secrets.local.toml.example`）。
+---
 
-### 真实 Relayer 依赖（可选）
-- 如果你准备联调真实 relayer（仍然建议先 `dry_run=true`），请安装 `py-clob-client`：
-  - 使用 uv：`uv add py-clob-client`
-  - 或者：`uv pip install py-clob-client`
-- 在 `config/service.toml` 中设置：`[relayer] type = "real"`，并在 `secrets.local.toml` 中提供 `private_key`（永远不要提交密钥）。
-- 运行前先执行 `preflight` 与 `smoke-live` 做一次干跑联调；若账户无余额，保持 `dry_run=true` 即可验证签名与客户端线路是否通畅。
+## 2. 配置（必做）
+1. 复制 `config/service.example.toml` → `config/service.toml`，只保留实际需要的市场（`[[market]]`）。
+2. 在同目录创建 `config/secrets.local.toml`（已 gitignore），用来放置密钥与 builder 凭证。
+3. 填写以下字段（示例见 `*.example` 文件）：
+   - `[relayer]`：`type`, `base_url`, `dry_run`, `private_key`, `chain_id`, `timeout_s`
+   - `[relayer.builder]`（推荐）：  
+     - 本地模式：`mode = "local"` 并提供 `api_key / api_secret / api_passphrase`
+     - 远程模式：`mode = "remote"` 并提供 `url / token`
+4. 若你更习惯使用环境变量，也可以设置：
+   ```
+   setx POLY_BUILDER_API_KEY "<key>"
+   setx POLY_BUILDER_SECRET "<secret>"
+   setx POLY_BUILDER_PASSPHRASE "<passphrase>"
+   setx POLY_BUILDER_REMOTE_URL "<url>"      # 可选
+   setx POLY_BUILDER_TOKEN "<token>"         # 可选
+   ```
+   CLI 会优先读取环境变量；空缺的字段再由 `secrets.local.toml` 补齐。
 
-## 本地运行
-### 回放已记录事件
-- 将 JSONL 事件（快照/增量）应用到数据库：
-  - `uv run python -m polybot.cli replay recordings/sample.jsonl mkt-1 --db-url sqlite:///./polybot.db`
+---
 
-### WebSocket 摄取（模拟或真实）
-- 使用本地模拟的 WebSocket 服务器：
-  - `uv run python -m polybot.cli ingest-ws ws://127.0.0.1:9000 mkt-1 --db-url sqlite:///./polybot.db --max-messages 100`
-- 摄取运行器会在首次增量和序列间隙时通过请求提供方快照来重新同步（本阶段为假数据）。
+## 3. 烟雾测试（dry-run）
+1. **预检查配置**  
+   ```
+   uv run python -m polybot.cli preflight --config config/service.toml
+   ```
+2. **干跑下单（不会触发真实订单）**  
+   ```
+   uv run python -m polybot.cli smoke-live \
+       --config config/service.toml \
+       <market_id> <outcome_id> buy 0.40 1 \
+       --base-url https://clob.polymarket.com \
+       --private-key 0x... \
+       --json
+   ```
+3. 确认命令输出 `placed=1 accepted=1`（或 JSON 中 `accepted:1`）。若 dry-run 都无法执行，请先排查网络或密钥配置。
 
-### 检查状态
-- 查看各市场的摄取状态：
-  - `uv run python -m polybot.cli status --db-url sqlite:///./polybot.db`
-  - 详细信息（报价 + 引擎耗时）：`uv run python -m polybot.cli status --db-url sqlite:///./polybot.db --verbose`
+---
 
-## 数据模型与保留策略
-- 使用 SQLite（WAL 模式）开发数据库，包含以下表格：
-  - `markets`, `outcomes`, `orderbook_events`, `orderbook_snapshots`, `orders`, `fills`, `market_status`, `exec_audit`。
-- 手动快照与清理工具：
-  - `OrderbookIngestor.persist_snapshot_now(ts_ms)`
-  - `OrderbookIngestor.prune_events_before(ts_ms_threshold)`
-  - 调度器支持：通过 `run_ingestion_session()` 实现周期性快照/清理。
+## 4. 实盘最小流（Builder 模式）
+> ⚠️ 操作前请确保 Builder 账户中已有 USDC。Polymarket Builder 账户与钱包地址不同，资金需单独转入 Builder Settings 中显示的地址。
 
-## 策略（第一阶段）
-- Dutch Book（仅在测试中包含检测器和规划器）。
-- Spread Capture（规划器 + 刷新策略 + 使用 FakeRelayer 的报价器进行模拟）。
-- 执行引擎将订单/成交/审计信息持久化到数据库以确保可追溯性。
-  - 审计信息包括生成的 plan_id 和 measured duration_ms。
+1. **确保配置为实盘**：在 `config/secrets.local.toml` 中设置 `dry_run = false`。
+2. **执行一次交易烟雾测试**（最常用命令）：
+   ```
+   uv run python -m polybot.cli relayer-live-order-config \
+       --config config/service.toml \
+       0x1fbeca90a39253081b032a9990da1cb5b25573d4e213327b5b0f0c222b05be6a \
+       37902884120561856159354666911594986421517777792635262864250023116967352650864 \
+       buy 0.39 5 \
+       --confirm-live \
+       --json
+   ```
+   - **参数顺序必须是**：`market_id outcome_id side price size`。若顺序错误，CLI 会提示 “invalid choice: ... (choose from buy, sell)”。
+   - `--confirm-live` 是安全保障，默认未加该参数会拒绝实盘下单。
+3. **平仓示例**（sell 命令与上方相同，只需改 `side`）：
+   ```
+   uv run python -m polybot.cli relayer-live-order-config \
+       --config config/service.toml \
+       <market_id> <outcome_id> sell 0.37 5 \
+       --confirm-live --json
+   ```
+4. **常见错误检查**：
+   | 输出 | 说明 | 处理 |
+   | --- | --- | --- |
+   | `error=not enough balance / allowance` | Builder 账户余额不足或未完成内部 allowance | 在 Builder Settings 中充值 / 刷新余额 |
+   | `PolyApiException[... Request exception]` | Cloudflare/SSL 短暂异常 | 直接重试命令；若持续失败请检查网络代理 |
+   | `invalid choice: '<market_id>' (choose from buy, sell)` | 参数顺序错误 | 按上表顺序重新输入 |
 
-## 向实时交易迈进（后续阶段）
-- 密钥与安全性：
-  - 使用 `config/secrets.local.toml` 存储私钥（该文件已被 git 忽略）。请勿提交密钥。
-  - 在启用后支持 EOA 签名以对接 Polymarket 中继器。
-  - 对于服务配置（`run-service --config`），加载同目录下的 `secrets.local.toml` 并自动覆盖 `[relayer]` 字段（如 `private_key`、`dry_run`）。
-- 授权与链上操作：
-  - 交易前请为 Polymarket 合约设置 USDC 授权（必要时还需设置 outcome token）。
-  - Gas 预算与 CTF 合并/拆分操作将在 Conversions 阶段引入。
-- 数据库：
-  - 可考虑迁移到 PostgreSQL（可选使用 Timescale、pgvector）。可在 `[db]` 中替换连接字符串。
+---
 
-## 可观测性
-- JSON 结构化日志输出至 stdout。
-- 执行审计信息保存在 `exec_audit` 中。
-- 计划后续阶段引入指标和仪表板（Prometheus）。
- - 进程内指标：`uv run python -m polybot.cli metrics` 显示计数器（包括按市场标识的值）。
-- Prometheus 暴露文本：`uv run python -m polybot.cli metrics-export` 可用于本地抓取或重定向至文件。
- - 轻量 HTTP 暴露：`uv run python -m polybot.cli metrics-serve --host 127.0.0.1 --port 0` 在本地提供 `/metrics` 与 `/health`。
+## 5. 运行多市场服务（可选）
+1. 保证 `config/service.toml` 中列出的 `[[market]]` 已配置完整。
+2. 启动服务：
+   ```
+   uv run python -m polybot.cli run-service --config config/service.toml
+   ```
+3. 服务退出后会自动打印 `status-summary`，也可以手动运行：
+   ```
+   uv run python -m polybot.cli status --db-url sqlite:///./polybot.db --verbose
+   ```
 
-## 运行手册与操作提示
-- 数据摄取出现停滞：
-  - 检查 `market_status.last_update_ts_ms` 并提高日志级别。
-  - 回放近期 JSONL 文件以调试状态变化。
-- 存储增长：
-  - 定期执行清理；可考虑按间隔保存快照以减少事件量。
-- 测试：
-  - 部署前确保 `uv run pytest -q` 仍能通过。
+---
 
-## 已知限制（MVP）
-- 在测试中 WebSocket 协议和数据结构为通用格式；真实 Polymarket 订阅将在之后接入。
-- 中继器调用在测试中使用 FakeRelayer；第一阶段不会发送真实订单。
-- Telegram 机器人和外部新闻订阅将在数据/存储/交易基础完全验证后再引入。
+## 6. 排错与支持
+- **Builder 授权/余额**：Polymarket Builder 后台不会复用 MetaMask 余额，务必在网页 Builder Settings 中转入 USDC（建议 ≥5）。
+- **如何查看订单是否成交**：
+  - CLI：`uv run python -m polybot.cli orders-tail --db-url sqlite:///./polybot.db --json`
+  - Polymarket 网页：Builder 账户历史记录。
+- **更多命令**：请参考 `docs/commands-reference.md`，其中包含 Gamma/WS 工具、tgbot、本地诊断等命令。
 
-## 数据库（PostgreSQL 路线）
-- 配置中可将 `[db].url` 设置为 `postgresql://...`。当前版本会抛出清晰的 `NotImplementedError`（尚未接入驱动与迁移），用于在部署前进行配置验证。
-- 未来版本将添加 PostgreSQL/Timescale 支持与索引/分区策略（见 `docs/handoff.md` 和 `docs/roadmap.md`）。
+---
 
-## 附录：示例本地数据库 URL
-- SQLite 文件：`sqlite:///./polybot.db`
-- SQLite 临时路径：`sqlite:///C:/path/to/tmp/polybot.db`
-- PostgreSQL（未来）：`postgresql://user:pass@host:5432/polybot`
-### 从事件流模拟 Spread 报价
-- 使用 QuoterRunner（编程方式）消费事件流并使用 FakeRelayer 和内存数据库生成/取消报价。此功能用于离线验证报价生命周期前的行为。
-- 如需生产环境模拟，可接入 WebSocket 客户端以生成订单簿消息，并在凭证/授权配置完成后使用真实中继器传递消息至 `QuoterRunner`。
-### 刷新 Markets Catalog（Gamma）
-- 一次性刷新到数据库：
-  - `uv run python -m polybot.cli refresh-markets https://gamma-api.polymarket.com --db-url sqlite:///./polybot.db`
-- 在代码中，使用 `GammaHttpClient` 调用 `polybot.ingestion.markets.refresh_markets` 实现周期性刷新。
+## 7. 文件清单（部署相关）
+| 文件 | 作用 |
+| --- | --- |
+| `config/service.toml` | 主配置（可提交） |
+| `config/secrets.local.toml` | 机密覆盖（永不提交） |
+| `config/service.example.toml` | 模板，展示所有字段 |
+| `config/secrets.local.toml.example` | 机密模板，可用于新环境 |
 
-### 对 WS 流运行 Spread Quoter
-- 从类似 Polymarket 的 WebSocket 流模拟 Spread 报价（使用 FakeRelayer）：
-  - `uv run python -m polybot.cli quoter-run-ws ws://127.0.0.1:9000 mkt-1 yes --db-url sqlite:///./polybot.db --max-messages 100`
-- 注意事项：
-  - 报价器会根据库存调整报价规模，并强制执行最小重报价间隔和风险敞口上限。
-  - 后续阶段替换为真实中继器；确保授权和认证已配置。
-
-### 运行多市场服务（模拟）
-- 编程方式使用 ServiceRunner 并发执行多个市场任务：
-  - 构造包含 `market_id`, `outcome_yes_id`, `ws_url`, `max_messages`, `subscribe=true` 的 MarketSpec 条目。
-  - 初始化 `ServiceRunner(db_url)` 并调用 `await run_markets(specs)`。
-- 此操作使用 FakeRelayer 模拟跨市场的并发订单簿消费与报价生成。
-
-### 选择 Relayer 类型（为上线做准备）
-- 在 `config/service.toml`（或 service.example.toml）中设置：
-  - `[relayer] type = "fake"`（默认，安全模拟）
-  - 接入真实中继器时设置 `type = "real"`，并通过机密覆盖提供 `private_key`；默认 `dry_run=true` 先联调。
-### 其他有用命令
-- 快速诊断：`uv run python -m polybot.cli status-top --db-url sqlite:///./polybot.db --limit 10`
-- 实盘干跑（需安装/配置 real relayer）：
-  - `uv run python -m polybot.cli relayer-dry-run mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x... --db-url sqlite:///./polybot.db`
-  - 一键烟雾测试（Preflight + Dry-run）：
-    - `uv run python -m polybot.cli smoke-live --config config/service.example.toml mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x...`
-  - 最小实盘测试（需 `--confirm-live` 严格确认）：
-    - `uv run python -m polybot.cli relayer-live-order mkt-1 yes buy 0.01 0.01 --base-url https://clob.polymarket.com --private-key 0x... --confirm-live`
-- tgbot 离线命令回放：
-  - 准备 JSONL（每行一个 update，如 `{ "message": { "text": "/help" } }`）
-  - `uv run python -m polybot.cli tgbot-run-local updates.jsonl mkt-1 yes --db-url sqlite:///./polybot.db`
-
-### 数据库迁移（PostgreSQL）
-- 查看 SQL：`uv run python -m polybot.cli migrate --db-url postgresql://user:pass@host:5432/db --print-sql`
-- 应用迁移（需安装 psycopg）：`uv run python -m polybot.cli migrate --db-url postgresql://user:pass@host:5432/db --apply`
-### 引擎重试控制（服务）
-- 在服务配置 `[service]` 下设置：
-  - `engine_max_retries = 2`
-  - `engine_retry_sleep_ms = 50`
-- 用于在下单失败时按计划进行重试与退避（结合内部指标 `engine_retries` 观察）。
-### （预备）授权 CLI（占位）
-- 在接入真实客户端前，以下命令会输出友好的占位消息：
-  - USDC 授权：`uv run python -m polybot.cli relayer-approve-usdc --base-url https://clob.polymarket.com --private-key 0x... --amount 100`
-  - Outcome 授权：`uv run python -m polybot.cli relayer-approve-outcome --base-url https://clob.polymarket.com --private-key 0x... --token 0x... --amount 10`
+如需将更多命令、数据库策略等信息回顾，可阅读 `docs/commands-reference.md` 与 `docs/handoff.md`。本指南仅保留“开箱即用”的关键步骤。

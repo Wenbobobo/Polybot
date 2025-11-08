@@ -10,6 +10,7 @@ dependencies = [
     "pydantic>=2.8",
     "orjson>=3.10",
     "py-clob-client>=0.28.0",
+    "py-builder-signing-sdk>=0.0.2",
 ]
 
 [tool.uv]

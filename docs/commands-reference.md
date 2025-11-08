@@ -3,16 +3,23 @@
 This document lists the CLI commands available for Polybot, grouped by workflow. Most users will rely on the Telegram bot and a few flows (preflight, smoke-live, run-service). Use this as a reference or for troubleshooting.
 
 ## Setup & Config
-- Preflight (validate service config):
+- Builder credentials
+  - Local signing：在 `config/secrets.local.toml`（或环境变量）中提供 `api_key / api_secret / api_passphrase`
+  - 远程 Builder：提供 `url / token`（亦可通过 `POLY_BUILDER_REMOTE_URL` 与 `POLY_BUILDER_TOKEN` 设置）
+  - 环境变量示例：
+    ```
+    setx POLY_BUILDER_API_KEY "<key>"
+    setx POLY_BUILDER_SECRET "<secret>"
+    setx POLY_BUILDER_PASSPHRASE "<passphrase>"
+    ```
+- Preflight（验证配置）：
   - `uv run python -m polybot.cli preflight --config config/service.toml`
-- Smoke live (preflight + one dry-run order):
-  - `uv run python -m polybot.cli smoke-live --config config/service.toml mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x...`
-  - JSON: append `--json`
-- Live order (requires `--confirm-live`):
-  - `uv run python -m polybot.cli relayer-live-order mkt-1 yes buy 0.01 0.01 --base-url https://clob.polymarket.com --private-key 0x... --confirm-live`
-  - JSON output: append `--as-json` to get `{"placed":N,"accepted":M,"statuses":{...}}`
-  - From config (reads secrets overlay):
-    - `uv run python -m polybot.cli relayer-live-order-config --config config/service.toml mkt-1 yes buy 0.01 0.01 --confirm-live --json`
+- Smoke（预检查 + dry-run）：
+  - `uv run python -m polybot.cli smoke-live --config config/service.toml mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x... --json`
+- Live order（严格遵循参数顺序：`market_id outcome_id side price size`）：
+  - 直接指定：`uv run python -m polybot.cli relayer-live-order <mid> <oid> buy 0.39 5 --base-url ... --private-key ... --confirm-live --as-json`
+  - 读取配置：`uv run python -m polybot.cli relayer-live-order-config --config config/service.toml <mid> <oid> buy 0.39 5 --confirm-live --json`
+  - 如输出 `invalid choice (choose from buy, sell)`，表示参数顺序错误，请重新输入。
 
 ## Service
 - Run service from config:

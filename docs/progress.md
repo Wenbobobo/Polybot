@@ -7,6 +7,7 @@ This file tracks decisions and incremental progress.
 - Hardened `make_pyclob_client` argument forwarding (chain_id/timeout aliases, introspection for differing constructors) while keeping read-only scans positional-only; raises early when a private key is supplied without chain_id.
 - Enhanced `markets-resolve` with a Next.js (`__NEXT_DATA__`) fallback to resolve modern markets by slug when the CLOB index misses them; unit test covers the new path.
 - Verified live relayer path end-to-end against Polymarket production: executed buy (0.39, size 5) and sell (0.37, size 5) on market `0x1fbeca90...`, confirming orders accepted after Cloudflare clearance.
+- Added Builder API support: service/CLI configs can specify local or remote builder credentials, `make_pyclob_client` wires them into `ClobClient` via `BuilderConfig`, and CLI helpers read either `[relayer.builder]` or `POLY_BUILDER_*` env vars. Unit tests cover config overlays, env extraction, and builder wiring.
 
 2025-10-30
 - Agreed scope: Polymarket-only, prioritize data+storage foundations.

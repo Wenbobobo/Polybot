@@ -25,6 +25,16 @@ private_key = ""              # leave empty; override in secrets.local.toml
 chain_id = 137
 timeout_s = 10.0
 
+[relayer.builder]
+mode = "local"                # "local" uses API key/secret/passphrase
+api_key = ""
+api_secret = ""
+api_passphrase = ""
+# For remote builder signing (optional):
+# mode = "remote"
+# url = "https://builder-api.polymarket.com"
+# token = ""
+
 ## Secrets overlay
 # Place a "secrets.local.toml" next to this file (gitignored) with:
 # [relayer]
