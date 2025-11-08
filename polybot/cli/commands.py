@@ -97,6 +97,231 @@ def _builder_kwargs_from_cfg(cfg) -> Dict[str, str]:
     return out
 
 
+def _has_local_builder(kwargs: Dict[str, str]) -> bool:
+    return all(kwargs.get(key) for key in ("builder_api_key", "builder_api_secret", "builder_api_passphrase"))
+
+
+def _has_remote_builder(kwargs: Dict[str, str]) -> bool:
+    return bool(kwargs.get("builder_remote_url"))
+
+
+def _builder_source(kwargs: Dict[str, str]) -> str | None:
+    if _has_local_builder(kwargs):
+        return "local"
+    if _has_remote_builder(kwargs):
+        return "remote"
+    return None
+
+
+def _ensure_builder_ready(cfg, builder_kwargs: Dict[str, str]) -> tuple[bool, str | None]:
+    if str(getattr(cfg, "relayer_type", "") or "").lower() != "real":
+        return True, None
+    if _builder_source(builder_kwargs):
+        return True, None
+    return False, "relayer.type=real requires builder credentials (api_key/api_secret/api_passphrase or remote url/token)"
+
+
+def _resolve_markets_raw(
+    *,
+    url: str | None = None,
+    query: str | None = None,
+    prefer: str | None = None,
+    use_pyclob: bool = True,
+    base_url: str = "https://clob.polymarket.com",
+    chain_id: int = 137,
+    timeout_s: float = 10.0,
+    http_timeout_s: float | None = None,
+    http_page_scans: int = 2,
+    debug: bool = False,
+) -> tuple[list[dict], dict]:
+    results: list[dict] = []
+    dbg: dict[str, object] = {}
+    if use_pyclob and _make_pyclob_client is None:
+        try:
+            from polybot.adapters.polymarket.real_client import make_pyclob_client as _reimp  # type: ignore
+
+            globals()["_make_pyclob_client"] = _reimp
+            if debug:
+                dbg["pyclob_import"] = "ok"
+        except Exception:
+            if debug:
+                dbg["pyclob_import"] = "import_failed"
+            pass
+    if use_pyclob and _make_pyclob_client is not None:
+        try:
+            client = _make_pyclob_client(base_url=base_url, private_key="", dry_run=True, chain_id=chain_id, timeout_s=timeout_s)
+            searcher = PyClobMarketSearcher(client)
+            used_fallback = False
+            if url:
+                infos = searcher.search_by_url(url, limit=5)
+                if not infos:
+                    meta = parse_polymarket_url(url)
+                    slug = (meta.get("slug") or "")
+                    if slug:
+                        short = slug.split("/")[-1].replace("-", " ")
+                        infos = searcher.search_by_query(short, limit=5)
+                        used_fallback = True
+            elif query:
+                infos = searcher.search_by_query(query, limit=5)
+            else:
+                infos = []
+            attempted_ids: list[str] = []
+            if debug:
+                dbg["search"] = {
+                    "mode": "url" if url else ("query" if query else "none"),
+                    "used_fallback_on_slug": used_fallback,
+                    "results_count": len(infos),
+                }
+            for mi in infos:
+                try:
+                    sel = choose_outcome(mi.outcomes, prefer=prefer)
+                    results.append(
+                        {
+                            "market_id": mi.market_id,
+                            "title": mi.title,
+                            "outcomes": [{"outcome_id": o.outcome_id, "name": o.name} for o in mi.outcomes],
+                            "selected_outcome_id": sel.outcome_id if sel else None,
+                            "selected_outcome_name": sel.name if sel else None,
+                        }
+                    )
+                    attempted_ids.append(mi.market_id)
+                except Exception:
+                    attempted_ids.append(getattr(mi, "market_id", ""))
+                    continue
+            if debug:
+                dbg["attempted_ids"] = attempted_ids
+        except Exception as e:
+            if debug:
+                dbg["client_ctor_error"] = str(e)
+            pass
+    slug_for_url: str | None = None
+    if url:
+        parsed = parse_polymarket_url(url)
+        slug_for_url = (parsed.get("slug") or "").lower()
+    if not results:
+        try:
+            http = ClobHttpClient(base_url=base_url, timeout=(http_timeout_s or timeout_s))
+            payload = http.get_simplified_markets(limit=100)
+            data = payload.get("data") or []
+            cursor = payload.get("next_cursor")
+            needle = ""
+            if url:
+                meta = parse_polymarket_url(url)
+                slug = (meta.get("slug") or "").split("/")[-1]
+                needle = slug.replace("-", " ").lower()
+            elif query:
+                needle = query.lower()
+            matches = []
+            scans = 0
+            for m in data:
+                q = str(m.get("question") or m.get("title") or m.get("slug") or "").lower()
+                if needle and needle in q:
+                    matches.append(m)
+            while not matches and cursor and scans < http_page_scans:
+                nxt = http.get_simplified_markets(cursor=cursor, limit=100)
+                data2 = nxt.get("data") or []
+                for m in data2:
+                    q = str(m.get("question") or m.get("title") or m.get("slug") or "").lower()
+                    if needle and needle in q:
+                        matches.append(m)
+                cursor = nxt.get("next_cursor")
+                scans += 1
+            for m in matches[:5]:
+                cond = str(m.get("condition_id") or m.get("id") or "").strip()
+                title = str(m.get("question") or m.get("title") or "")
+                outs = []
+                names = m.get("outcomes") if isinstance(m.get("outcomes"), list) else []
+                cti = m.get("clobTokenIds") if isinstance(m.get("clobTokenIds"), str) else ""
+                tokens_list = [x.strip() for x in cti.split(",") if x.strip()] if cti else []
+                if names and tokens_list and len(names) == len(tokens_list):
+                    for i, name in enumerate(names):
+                        outs.append({"outcome_id": tokens_list[i], "name": name})
+                else:
+                    for name in (names or []):
+                        outs.append({"outcome_id": "", "name": name})
+                sel_id = outs[0]["outcome_id"] if outs and outs[0]["outcome_id"] else None
+                sel_name = outs[0]["name"] if outs else None
+                results.append(
+                    {
+                        "market_id": cond,
+                        "title": title,
+                        "outcomes": outs,
+                        "selected_outcome_id": sel_id,
+                        "selected_outcome_name": sel_name,
+                    }
+                )
+            if debug:
+                dbg["http_fallback"] = {"matches": len(matches)}
+        except Exception as e:
+            if debug:
+                dbg["http_fallback_error"] = str(e)
+    if not results and url:
+        next_payload = _resolve_market_via_next_data(url, timeout_s=http_timeout_s or timeout_s)
+        if next_payload:
+            outs = next_payload.get("outcomes") or []
+            sel = None
+            try:
+                sel = choose_outcome(
+                    [OutcomeInfo(outcome_id=o["outcome_id"], name=o["name"]) for o in outs],
+                    prefer=prefer,
+                )
+            except Exception:
+                sel = None
+            sel_id = sel.outcome_id if sel else (outs[0]["outcome_id"] if outs else None)
+            sel_name = sel.name if sel else (outs[0]["name"] if outs else None)
+            results.append(
+                {
+                    "market_id": next_payload.get("market_id"),
+                    "title": next_payload.get("title"),
+                    "outcomes": outs,
+                    "selected_outcome_id": sel_id,
+                    "selected_outcome_name": sel_name,
+                }
+            )
+            if debug:
+                dbg["next_data"] = {"used": True}
+        elif debug:
+            dbg["next_data"] = {"used": False}
+    if results and slug_for_url:
+        segments = [seg.replace("-", " ").strip().lower() for seg in slug_for_url.split("/") if seg]
+        def _matches(entry: dict) -> bool:
+            title = str(entry.get("title") or "").lower()
+            market_id = str(entry.get("market_id") or "").lower()
+            return any(seg in title or seg in market_id for seg in segments)
+        if segments and not any(_matches(r) for r in results):
+            results.clear()
+    return results, dbg
+
+
+def _resolve_market_choice(
+    *,
+    url: str | None = None,
+    query: str | None = None,
+    prefer: str | None = None,
+    base_url: str = "https://clob.polymarket.com",
+    chain_id: int = 137,
+    timeout_s: float = 10.0,
+) -> dict | None:
+    results, _ = _resolve_markets_raw(
+        url=url,
+        query=query,
+        prefer=prefer,
+        use_pyclob=True,
+        base_url=base_url,
+        chain_id=chain_id,
+        timeout_s=timeout_s,
+        http_page_scans=5,
+    )
+    if not results:
+        return None
+    entry = results[0]
+    mid = entry.get("market_id")
+    oid = entry.get("selected_outcome_id")
+    if not mid or not oid:
+        return None
+    return entry
+
+
 def cmd_replay(file: str, market_id: str, db_url: str = ":memory:") -> None:
     setup_logging()
     con = init_db(db_url)
@@ -192,6 +417,7 @@ def cmd_status(db_url: str = ":memory:", verbose: bool = False, as_json: bool = 
                 # Include per-market relayer event counters when verbose JSON is requested
                 item["relayer_rate_limited_events"] = get_counter_labelled("relayer_rate_limited_events", {"market": mkt})
                 item["relayer_timeouts_events"] = get_counter_labelled("relayer_timeouts_events", {"market": mkt})
+                item["relayer_builder_errors"] = get_counter_labelled("relayer_builder_errors", {"market": mkt})
             items.append(item)
         out = _json.dumps(items)
         print(out)
@@ -216,6 +442,7 @@ def cmd_status(db_url: str = ":memory:", verbose: bool = False, as_json: bool = 
             of = get_counter_labelled("orders_filled", {"market": mkt})
             rak_ok = get_counter_labelled("relayer_acks_accepted", {"market": mkt})
             rak_rej = get_counter_labelled("relayer_acks_rejected", {"market": mkt})
+            rbe = get_counter_labelled("relayer_builder_errors", {"market": mkt})
             eret = get_counter_labelled("engine_retries", {"market": mkt})
             dplaced = get_counter_labelled("dutch_orders_placed", {"market": mkt})
             drh = get_counter_labelled("dutch_rulehash_changed", {"market": mkt})
@@ -235,7 +462,7 @@ def cmd_status(db_url: str = ":memory:", verbose: bool = False, as_json: bool = 
             lines.append(f"  orders: placed={op} filled={of} exec_avg_ms={avg_ms:.1f} exec_count={ec} retries={eret} ack_avg_ms={ack_avg:.1f}")
             rrl = get_counter_labelled("relayer_rate_limited_events", {"market": mkt})
             rto = get_counter_labelled("relayer_timeouts_events", {"market": mkt})
-            lines.append(f"  relayer: acks_accepted={rak_ok} acks_rejected={rak_rej} rate_limited_total={rl} timeouts_total={to} per_market_rl={rrl} per_market_to={rto}")
+            lines.append(f"  relayer: acks_accepted={rak_ok} acks_rejected={rak_rej} rate_limited_total={rl} timeouts_total={to} per_market_rl={rrl} per_market_to={rto} builder_errors={rbe}")
             lines.append(f"  dutch: placed={dplaced} rulehash_changed={drh}")
             lines.append(f"  resyncs: total={total_resyncs} ratio={resync_ratio:.3f}")
     out = "\n".join(lines)
@@ -262,17 +489,18 @@ def cmd_status_top(db_url: str = ":memory:", limit: int = 5) -> str:
         cancel_rl = get_counter_labelled("quotes_cancel_rate_limited", {"market": mkt})
         rejects = get_counter_labelled("relayer_acks_rejected", {"market": mkt})
         place_errs = get_counter_labelled("relayer_place_errors", {"market": mkt})
-        stats.append((mkt, resync_ratio, cancel_rl, rejects, place_errs))
-    # Sort: resync ratio desc, then rejects desc, then place_errs desc, then cancel rate-limit desc
-    stats.sort(key=lambda x: (-x[1], -x[3], -x[4], -x[2], x[0]))
+        builder_errs = get_counter_labelled("relayer_builder_errors", {"market": mkt})
+        stats.append((mkt, resync_ratio, cancel_rl, rejects, place_errs, builder_errs))
+    # Sort: resync ratio desc, then rejects desc, then place_errs desc, then builder errors desc, then cancel rate-limit desc
+    stats.sort(key=lambda x: (-x[1], -x[3], -x[4], -x[5], -x[2], x[0]))
     top = stats[: max(1, limit)]
     # Global counters for relayer limits/timeouts
     from polybot.observability.metrics import get_counter
     rl = get_counter("relayer_rate_limited_total")
     to = get_counter("relayer_timeouts_total")
-    lines = ["market_id resync_ratio rejects place_errors cancel_rate_limited rate_limited_total timeouts_total"]
-    for mkt, ratio, crl, rej, perr in top:
-        lines.append(f"{mkt} {ratio:.3f} {rej} {perr} {crl} {rl} {to}")
+    lines = ["market_id resync_ratio rejects place_errors builder_errors cancel_rate_limited rate_limited_total timeouts_total"]
+    for mkt, ratio, crl, rej, perr, berr in top:
+        lines.append(f"{mkt} {ratio:.3f} {rej} {perr} {berr} {crl} {rl} {to}")
     out = "\n".join(lines)
     print(out)
     return out
@@ -300,11 +528,13 @@ def cmd_status_summary(db_url: str = ":memory:", as_json: bool = False) -> str:
             rt_sum = get_counter_labelled("service_market_runtime_ms_sum", {"market": mkt})
             rt_cnt = get_counter_labelled("service_market_runtime_count", {"market": mkt})
             rt_avg = (rt_sum / rt_cnt) if rt_cnt else 0
+            builder_errs = get_counter_labelled("relayer_builder_errors", {"market": mkt})
             items.append({
                 "market_id": mkt,
                 "resync_ratio": resync_ratio,
                 "rejects": rejects,
                 "place_errors": place_errs,
+                "builder_errors": builder_errs,
                 "runtime_avg_ms": rt_avg,
                 "quotes_cancel_rate_limited": get_counter_labelled("quotes_cancel_rate_limited", {"market": mkt}),
                 "quotes_rate_limited": get_counter_labelled("quotes_rate_limited", {"market": mkt}),
@@ -312,7 +542,7 @@ def cmd_status_summary(db_url: str = ":memory:", as_json: bool = False) -> str:
         out = _json.dumps(items)
         print(out)
         return out
-    lines = ["market_id resync_ratio rejects place_errors runtime_avg_ms"]
+    lines = ["market_id resync_ratio rejects place_errors builder_errors runtime_avg_ms"]
     for (mkt,) in rows:
         applied = get_counter_labelled("ingestion_msg_applied", {"market": mkt})
         gap = get_counter_labelled("ingestion_resync_gap", {"market": mkt})
@@ -322,10 +552,11 @@ def cmd_status_summary(db_url: str = ":memory:", as_json: bool = False) -> str:
         resync_ratio = (total_resyncs / max(1, applied)) if applied else 0
         rejects = get_counter_labelled("relayer_acks_rejected", {"market": mkt})
         place_errs = get_counter_labelled("relayer_place_errors", {"market": mkt})
+        builder_errs = get_counter_labelled("relayer_builder_errors", {"market": mkt})
         rt_sum = get_counter_labelled("service_market_runtime_ms_sum", {"market": mkt})
         rt_cnt = get_counter_labelled("service_market_runtime_count", {"market": mkt})
         rt_avg = (rt_sum / rt_cnt) if rt_cnt else 0
-        lines.append(f"{mkt} {resync_ratio:.3f} {rejects} {place_errs} {rt_avg:.1f}")
+        lines.append(f"{mkt} {resync_ratio:.3f} {rejects} {place_errs} {builder_errs} {rt_avg:.1f}")
     out = "\n".join(lines)
     print(out)
     return out
@@ -623,6 +854,7 @@ def cmd_preflight(config_path: str, as_json: bool = False) -> str:
     except Exception as e:  # noqa: BLE001
         issues.append(f"invalid db_url: {e}")
     # Relayer
+    builder_kwargs: Dict[str, str] = {}
     if cfg.relayer_type.lower() == "real":
         from polybot.adapters.polymarket.crypto import is_valid_private_key
 
@@ -630,6 +862,12 @@ def cmd_preflight(config_path: str, as_json: bool = False) -> str:
             issues.append("relayer.private_key is invalid (expect 0x-prefixed 32-byte hex)")
         if int(cfg.relayer_chain_id) <= 0:
             issues.append("relayer.chain_id must be > 0")
+        builder_kwargs = _builder_kwargs_from_cfg(cfg)
+        env_builder = _builder_kwargs_from_env()
+        builder_kwargs.update(env_builder)
+        ready, reason = _ensure_builder_ready(cfg, builder_kwargs)
+        if not ready and reason:
+            issues.append(reason)
     # Markets
     if not cfg.markets:
         issues.append("no markets configured")
@@ -681,13 +919,14 @@ def cmd_smoke_live(config_path: str, market_id: str, outcome_id: str, side: str,
 
     rl = get_counter("relayer_rate_limited_total")
     to = get_counter("relayer_timeouts_total")
+    be = get_counter("relayer_builder_errors_total")
     if as_json:
         import json as _json
-        body = {"preflight": pre, "result": res, "rate_limited_total": rl, "timeouts_total": to}
+        body = {"preflight": pre, "result": res, "rate_limited_total": rl, "timeouts_total": to, "builder_errors_total": be}
         out = _json.dumps(body)
         print(out)
         return out
-    out = f"{pre}\n{res}\nmetrics: rate_limited={rl} timeouts={to}"
+    out = f"{pre}\n{res}\nmetrics: rate_limited={rl} timeouts={to} builder_errors={be}"
     print(out)
     return out
 
@@ -1116,6 +1355,8 @@ def cmd_relayer_live_order(
     timeout_s: float = 10.0,
     confirm_live: bool = False,
     as_json: bool = False,
+    url: str | None = None,
+    prefer: str | None = None,
     **builder_kwargs,
 ) -> str:
     """Place a single LIVE order via real relayer.
@@ -1127,6 +1368,24 @@ def cmd_relayer_live_order(
         msg = "live order blocked: add --confirm-live to proceed"
         print(msg)
         return msg
+    if url:
+        resolved = _resolve_market_choice(
+            url=url,
+            prefer=prefer,
+            base_url=base_url,
+            chain_id=chain_id,
+            timeout_s=timeout_s,
+        )
+        if not resolved:
+            msg = "failed to resolve market from URL; run markets-resolve --url <URL>"
+            print(msg)
+            return msg
+        market_id = resolved.get("market_id") or market_id
+        outcome_id = resolved.get("selected_outcome_id") or outcome_id
+        if not market_id or not outcome_id:
+            msg = "resolved URL missing market/outcome; specify IDs manually"
+            print(msg)
+            return msg
     env_builder = _builder_kwargs_from_env()
     builder_kwargs = {**builder_kwargs, **env_builder}
     try:
@@ -1206,6 +1465,8 @@ def cmd_relayer_live_order_from_config(
     *,
     confirm_live: bool = False,
     as_json: bool = False,
+    url: str | None = None,
+    prefer: str | None = None,
 ) -> str:
     """Convenience wrapper to place a live order using credentials from service config + secrets overlay.
 
@@ -1227,8 +1488,96 @@ def cmd_relayer_live_order_from_config(
         timeout_s=cfg.relayer_timeout_s,
         confirm_live=confirm_live,
         as_json=as_json,
+        url=url,
+        prefer=prefer,
         **builder_kwargs,
     )
+
+
+def _builder_health_output(ok: bool, message: str, details: dict[str, object] | None, as_json: bool) -> str:
+    payload: dict[str, object] = {"ok": ok, "message": message}
+    if details:
+        payload.update(details)
+    if as_json:
+        out = _json.dumps(payload)
+        print(out)
+        return out
+    if ok:
+        summary_bits = []
+        if details:
+            for key in ("builder_type", "source", "address", "can_builder_auth"):
+                val = details.get(key)
+                if val not in (None, "", {}):
+                    summary_bits.append(f"{key}={val}")
+        summary = " ".join(summary_bits)
+        text = f"builder ok{(': ' + summary) if summary else ''}"
+        print(text)
+        return text
+    text = f"builder not ready: {message}"
+    print(text)
+    return text
+
+
+def cmd_builder_health(config_path: str, as_json: bool = False) -> str:
+    """Check builder credentials and instantiation for a config."""
+    cfg = load_service_config(config_path)
+    builder_kwargs = _builder_kwargs_from_cfg(cfg)
+    env_kwargs = _builder_kwargs_from_env()
+    builder_kwargs.update(env_kwargs)
+    ready, reason = _ensure_builder_ready(cfg, builder_kwargs)
+    source = _builder_source(builder_kwargs)
+    if not ready:
+        return _builder_health_output(False, reason or "builder credentials missing", {"source": source}, as_json)
+    if not cfg.relayer_private_key:
+        return _builder_health_output(False, "relayer.private_key is missing", {"source": source}, as_json)
+    try:
+        from polybot.adapters.polymarket.crypto import is_valid_private_key
+
+        if not is_valid_private_key(cfg.relayer_private_key):
+            return _builder_health_output(False, "relayer.private_key is invalid", {"source": source}, as_json)
+    except Exception:
+        pass
+    try:
+        rel = build_relayer(
+            "real",
+            base_url=cfg.relayer_base_url,
+            private_key=cfg.relayer_private_key,
+            dry_run=True,
+            chain_id=cfg.relayer_chain_id,
+            timeout_s=cfg.relayer_timeout_s,
+            **builder_kwargs,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _builder_health_output(False, f"failed to build relayer: {exc}", {"source": source}, as_json)
+    client = getattr(rel, "_client", rel)
+    builder_config = getattr(client, "builder_config", None)
+    if builder_config is None:
+        return _builder_health_output(False, "client missing builder_config (check credentials and py-clob-client version)", {"source": source}, as_json)
+    builder_type_value = None
+    try:
+        btype = builder_config.get_builder_type()
+        builder_type_value = getattr(btype, "value", str(btype))
+    except Exception:
+        builder_type_value = None
+    try:
+        can_auth = bool(client.can_builder_auth())
+    except Exception as exc:  # noqa: BLE001
+        return _builder_health_output(False, f"builder auth check failed: {exc}", {"source": source, "builder_type": builder_type_value}, as_json)
+    if not can_auth:
+        return _builder_health_output(False, "builder configuration invalid or incomplete", {"source": source, "builder_type": builder_type_value, "can_builder_auth": can_auth}, as_json)
+    address = ""
+    if hasattr(client, "get_address"):
+        try:
+            address = client.get_address() or ""
+        except Exception:
+            address = ""
+    details = {
+        "builder_type": builder_type_value,
+        "source": source,
+        "address": address,
+        "can_builder_auth": can_auth,
+    }
+    return _builder_health_output(True, "builder credentials valid", details, as_json)
 
 
 def cmd_markets_search(db_url: str, query: str, limit: int = 10, as_json: bool = False) -> str:

@@ -28,6 +28,6 @@ def test_status_top_includes_place_errors_and_sorts(tmp_path):
     out = cmd_status_top(db_url=db_url, limit=2)
     # Header includes extended columns
     header = out.splitlines()[0]
-    assert "place_errors" in header and "rate_limited_total" in header and "timeouts_total" in header
+    assert "place_errors" in header and "builder_errors" in header and "rate_limited_total" in header and "timeouts_total" in header
     # m2 should appear first due to higher resync ratio and place errors
     assert out.splitlines()[1].startswith("m2 ")

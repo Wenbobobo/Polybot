@@ -18,7 +18,7 @@ def test_status_top_includes_place_errors(tmp_path: Path):
     reset()
     inc_labelled("relayer_place_errors", {"market": "m1"}, 3)
     out = cmd_status_top(db_url=f"sqlite:///{dbfile}", limit=1)
-    assert out.splitlines()[0].startswith("market_id resync_ratio rejects place_errors")
+    assert out.splitlines()[0].startswith("market_id resync_ratio rejects place_errors builder_errors")
     # place_errors field is the 4th column
     parts = out.splitlines()[1].split()
     assert parts[3] == '3'

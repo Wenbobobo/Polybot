@@ -21,9 +21,10 @@ def test_status_summary_outputs_expected_columns(tmp_path):
     inc_labelled("relayer_place_errors", {"market": "m1"}, 3)
     inc_labelled("service_market_runtime_ms_sum", {"market": "m1"}, 50)
     inc_labelled("service_market_runtime_count", {"market": "m1"}, 1)
+    inc_labelled("relayer_builder_errors", {"market": "m1"}, 4)
     out = cmd_status_summary(db_url=db)
     lines = out.splitlines()
-    assert lines[0] == "market_id resync_ratio rejects place_errors runtime_avg_ms"
+    assert lines[0] == "market_id resync_ratio rejects place_errors builder_errors runtime_avg_ms"
     # resync_ratio = (2 / 10) = 0.2
     assert lines[1].startswith("m1 ") and " 0.200 " in lines[1]
-
+    assert " 4 " in lines[1]

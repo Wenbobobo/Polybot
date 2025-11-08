@@ -22,6 +22,7 @@ from .commands import (
     cmd_relayer_approve_usdc,
     cmd_relayer_approve_outcome,
     cmd_relayer_live_order,
+    cmd_builder_health,
 )
 from polybot.cli.commands import cmd_run_service_from_config_async
 
@@ -131,6 +132,9 @@ def main() -> None:
     p_pf = sub.add_parser("preflight", help="Validate a service config TOML before running live")
     p_pf.add_argument("--config", required=True)
     p_pf.add_argument("--json", action="store_true")
+    p_bh = sub.add_parser("builder-health", help="Validate builder credentials and relayer instantiation")
+    p_bh.add_argument("--config", required=True)
+    p_bh.add_argument("--json", action="store_true")
     p_cfgd = sub.add_parser("config-dump", help="Load a service TOML and print normalized JSON (secrets redacted)")
     p_cfgd.add_argument("--config", required=True)
 
@@ -219,6 +223,8 @@ def main() -> None:
     p_rlive.add_argument("--chain-id", type=int, default=137)
     p_rlive.add_argument("--timeout-s", type=float, default=10.0)
     p_rlive.add_argument("--confirm-live", action="store_true")
+    p_rlive.add_argument("--url")
+    p_rlive.add_argument("--prefer", choices=["yes", "no"])
 
     p_merge = sub.add_parser("conversions-merge", help="Simulate CTF merge (YES/NO -> USDC) using fake or real CTF")
     p_merge.add_argument("market_id")
@@ -254,6 +260,8 @@ def main() -> None:
     p_rlc.add_argument("size", type=float)
     p_rlc.add_argument("--confirm-live", action="store_true")
     p_rlc.add_argument("--json", action="store_true")
+    p_rlc.add_argument("--url")
+    p_rlc.add_argument("--prefer", choices=["yes", "no"])
 
     p_cancel = sub.add_parser("orders-cancel", help="Cancel client orders by client_oid")
     p_cancel.add_argument("client_oids", help=",-separated client order IDs (e.g., c1,c2)")
@@ -297,6 +305,8 @@ def main() -> None:
     elif args.cmd == "preflight":
         from .commands import cmd_preflight
         cmd_preflight(args.config, as_json=args.json)
+    elif args.cmd == "builder-health":
+        cmd_builder_health(args.config, as_json=args.json)
     elif args.cmd == "config-dump":
         from .commands import cmd_config_dump
         cmd_config_dump(args.config)
@@ -332,6 +342,8 @@ def main() -> None:
             args.size,
             confirm_live=args.confirm_live,
             as_json=args.json,
+            url=args.url,
+            prefer=args.prefer,
         )
     elif args.cmd == "orders-cancel":
         from .commands import cmd_orders_cancel_client_oids
@@ -458,6 +470,8 @@ def main() -> None:
             chain_id=args.chain_id,
             timeout_s=args.timeout_s,
             confirm_live=args.confirm_live,
+            url=args.url,
+            prefer=args.prefer,
         )
     elif args.cmd == "relayer-dry-run":
         cmd_relayer_dry_run(

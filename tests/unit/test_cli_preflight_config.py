@@ -49,3 +49,27 @@ def test_preflight_invalid_private_key_for_real(tmp_path: Path):
     out = cmd_preflight(str(cfg))
     assert out.startswith("INVALID:") and "private_key" in out
 
+
+def test_preflight_real_requires_builder(tmp_path: Path):
+    cfg = tmp_path / "svc.toml"
+    cfg.write_text(
+        """
+        [service]
+        db_url=":memory:"
+
+        [relayer]
+        type="real"
+        private_key = "0x1111111111111111111111111111111111111111111111111111111111111111"
+        chain_id = 137
+
+        [[market]]
+        market_id = "m1"
+        outcome_yes_id = "yes"
+        ws_url = "ws://127.0.0.1:1"
+        subscribe = false
+        max_messages = 1
+        """,
+        encoding="utf-8",
+    )
+    out = cmd_preflight(str(cfg))
+    assert out.startswith("INVALID:") and "builder credentials" in out

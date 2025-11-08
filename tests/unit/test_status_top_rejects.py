@@ -24,6 +24,5 @@ def test_status_top_includes_rejects(tmp_path: Path):
     out = cmd_status_top(db_url=f"sqlite:///{dbfile}", limit=2)
     # First line is header; expect m1 to be listed above m2 due to higher rejects
     lines = out.splitlines()
-    assert lines[0].startswith("market_id resync_ratio rejects")
+    assert lines[0].startswith("market_id resync_ratio rejects place_errors builder_errors")
     assert lines[1].startswith("m1 ")
-
