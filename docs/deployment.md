@@ -59,6 +59,12 @@
 
 ## 4. 实盘最小流（Builder 模式）
 > ⚠️ 操作前请确保 Builder 账户中已有 USDC。Polymarket Builder 使用你头像下方的 Profile Address（亦即 `funder`），需要把 USDC 充值到该地址后，Builder API 才能代表你下单。
+1. **刷新/查看 Builder 额度**
+   ```
+   uv run python -m polybot.cli relayer-approve-usdc --config config/service.toml --get-only
+   uv run python -m polybot.cli relayer-approve-outcome --config config/service.toml --token <outcome_id>
+   ```
+   - 不带 `--get-only` 时会调用官方 `/balance-allowance/update` 接口后再次读取额度；建议先做 USDC，再对每个常用 outcome 调用一次。
 
 1. **确保配置为实盘**：在 `config/secrets.local.toml` 中设置 `dry_run = false`。
 2. **执行一次交易烟雾测试**（最常用命令）：

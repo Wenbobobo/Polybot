@@ -26,6 +26,9 @@ This runbook covers common operational tasks for Polybot MVP in Phase 1.
   - `polybot.cli replay <file> <market_id> --db-url sqlite:///./polybot.db`
 - Compare snapshots before/after deltas to validate checksum mismatches and resync behavior.
  - Validate message schemas using the pydantic models if needed (schemas.py).
+- Ad-hoc单笔交易（解析 + 最新行情 + 下/平仓）：
+  - `uv run python -m polybot.cli market-trade --config config/service.toml --url "https://polymarket.com/event/foo" --side buy --price 0.35 --size 2 --close --close-price 0.4 --confirm-live --json`
+  - 解析 URL 或 `--query`，展示 `/price`/`/midpoint`/`/spread` 信息；仅在 `--confirm-live` 下发送 IOC 下单，可选 `--close` 自动反向平仓；无 `--confirm-live` 时用于行情快照。
 
 ## Quoting Lifecycle (Spread)
 - The SpreadQuoter enforces:

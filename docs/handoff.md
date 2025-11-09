@@ -43,7 +43,8 @@ Relayer / Wallet & Secrets
 - 不要提交私钥；将 `private_key` 放于 gitignored 的本地配置（如 `config/secrets.local.toml`）。`run-service --config <file>` 会自动读取同目录的 `secrets.local.toml` 并覆盖 `[relayer]` 字段。
 - 切实盘前：
   - `[relayer]` 指向正确 base_url；dry_run=true 先联调；使用 `relayer-dry-run` 验证路径；
-  - 完成 USDC 与 outcome token 授权（allowance）；目前提供占位 CLI：`relayer-approve-usdc` 与 `relayer-approve-outcome`（在未接入真实客户端时输出友好提示）。
+  - `builder-health`：`uv run python -m polybot.cli builder-health --config config/service.toml --json` 会创建 dry-run py-clob-client 并输出 builder type/source/address/can_builder_auth，失败会提示缺失字段或 py-clob-client 安装问题。
+  - 完成 USDC 与 outcome token 授权（allowance）：`relayer-approve-usdc` 与 `relayer-approve-outcome` 现在直接调用官方 `/balance-allowance` API，可带 `--config` 复用 Builder/私钥；`--get-only` 仅查看额度。命令会在输出中显示 `before/after/update`，并累积 `relayer_allowance_*` metrics。
   - 规则/市场风险过筛（避免 Other；核对 rule_hash）；
   - 合理的限速/重试参数，避免自我限流或风控触发。
   - 安装 `py-clob-client`：使用 uv 安装（`uv add py-clob-client`），或 `uv pip install py-clob-client`；保持 `dry_run=true` 进行首次联调。
@@ -131,11 +132,13 @@ Key Commands
 - Diagnostics: `status`, `status --verbose`, `status-top`, `metrics[-export|-serve]`
 - Strategy: `quoter-run-ws`, `quoter-run-replay`, `dutch-run-replay`
 - Relayer: `relayer-dry-run`（真 relayer 干跑）
+- Live single-trade: `market-trade --config config/service.toml --url "<polymarket-url>" --side buy --price 0.35 --size 1 --close --confirm-live --json`（解析市场 → 输出最新 `/price`/`/midpoint`/`/spread` → 建/平仓，默认仅展示行情）
 - Bot (offline): `tgbot-run-local`（/status、/buy、/sell）
 
 JSON Outputs
 - `status --json --verbose` 包含每市场的重同步比率、报价限流计数，以及新增的 `relayer_rate_limited_events` 与 `relayer_timeouts_events` 用于可视化与报警。
 - `relayer-live-order` 支持 `as_json`（需 `--confirm-live`），用于自动化联调/回归测试（返回下单与状态分布统计）。
+- `smoke-live --json` 输出 `{preflight, builder, allowances, result, rate_limited_total, timeouts_total, builder_errors_total}`，便于 CI/自检脚本一次性确认配置、builder 签名与余额额度是否全部就绪。
 
 Diagnostics & Market Sync
 - 当 Gamma `/markets` 返回旧样本或缺少 `condition_id` 时，使用 CLOB 路径：

@@ -61,9 +61,13 @@ This document lists the CLI commands available for Polybot, grouped by workflow.
 ## Relayer (real client)
 - Dry-run order:
   - `uv run python -m polybot.cli relayer-dry-run mkt-1 yes buy 0.40 1 --base-url https://clob.polymarket.com --private-key 0x... --db-url sqlite:///./polybot.db`
-- Approvals:
-  - USDC: `uv run python -m polybot.cli relayer-approve-usdc --base-url https://clob.polymarket.com --private-key 0x... --amount 100`
-  - Outcome: `uv run python -m polybot.cli relayer-approve-outcome --base-url https://clob.polymarket.com --private-key 0x... --token 0x... --amount 10`
+- Allowance refresh（builder 账户）:
+  - USDC：`uv run python -m polybot.cli relayer-approve-usdc --config config/service.toml --get-only`
+  - Outcome：`uv run python -m polybot.cli relayer-approve-outcome --config config/service.toml --token 0x...`
+  - `--get-only` 仅查看额度，不触发 `/balance-allowance/update`；若不加则会调用官方 `update_balance_allowance` 后再读一次额度。
+- One-shot trade：
+  - `uv run python -m polybot.cli market-trade --config config/service.toml --url "https://polymarket.com/event/foo" --side buy --price 0.35 --size 2 --close --close-price 0.45 --confirm-live --json`
+  - 自动解析市场/Outcome → 获取 `/price`/`/midpoint`/`/spread` 最新数据 → 在 `--confirm-live` 下建仓并可选 `--close` 平仓；`--json` 返回结构化结果，默认文本模式。
 
 ## Observability
 - Status & Health:

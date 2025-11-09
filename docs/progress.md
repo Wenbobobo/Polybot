@@ -7,6 +7,8 @@ This file tracks decisions and incremental progress.
 - Preflight hardened for real relayer configs: invalid/missing builder credentials now fail fast alongside the existing private_key/chain_id checks; unit tests cover the new validation plus builder-health happy/edge cases.
 - Documentation refresh: deployment guide highlights builder funding address and the new health command; runbook health section now includes the builder validation routine.
 - Strengthened PyClob adapter and retry instrumentation: PyClobRelayer now pads missing relayer responses, respects `success` / `errorMsg`, and new tests cover error mapping. RetryRelayer classifies builder-auth failures into new metrics (`relayer_builder_errors_total`, per-market labelled counters) which surface via `status`, `status-top`, `status-summary`, and `smoke-live` outputs.
+- Allowance tooling & smoke orchestration: `relayer-approve-{usdc,outcome}` now hit Polymarket's `get/update_balance_allowance` endpoints (with `--config`/`--get-only` support) and reuse builder credentials; `smoke-live` runs builder-health checks plus USDC/outcome allowance reads before executing the dry-run order.
+- Added `market-trade` CLI: resolves markets by URL/query or explicit IDs, fetches latest `/price`/`/midpoint`/`/spread` data via CLOB HTTP, and orchestrates entry + optional close orders (calling relayer commands with suppressed output for clean JSON/text summaries). Docs/runbook/handoff updated to highlight the new end-to-end user flow.
 
 2025-11-04
 - Added bridging adapter so `build_relayer("real")` wraps raw `ClobClient` instances, including support for `timeInForce` mapping and API credential bootstrap; CLI dry-run/live flows now operate against py-clob-client installs without modifying library code.
