@@ -31,6 +31,7 @@ class PyClobRelayer:
 
     def place_orders(self, reqs: List[OrderRequest], idempotency_prefix: Optional[str] = None) -> List[OrderAck]:
         payload: List[Dict[str, Any]] = []
+        client_order_ids: List[str] = []
         for r in reqs:
             o: Dict[str, Any] = {
                 "market": r.market_id,
@@ -42,26 +43,53 @@ class PyClobRelayer:
             }
             if r.client_order_id:
                 o["clientOrderId"] = r.client_order_id
+                client_order_ids.append(r.client_order_id)
+            else:
+                client_order_ids.append("")
             if idempotency_prefix and r.client_order_id:
                 o["idempotencyKey"] = f"{idempotency_prefix}:{r.client_order_id}"
             payload.append(o)
-        raw = self._client.place_orders(payload)
+        raw = self._client.place_orders(payload) or []
         acks: List[OrderAck] = []
-        for a in raw:
-            status_value = str(self._resp_get(a, "status", default="accepted"))
+        for idx, a in enumerate(raw):
+            status_value_raw = self._resp_get(a, "status", default="accepted")
+            status_value = str(status_value_raw) if status_value_raw is not None else "accepted"
+            status_lower = status_value.lower()
             error_msg = self._resp_get(a, "error", "errorMsg")
+            error_text = str(error_msg) if error_msg is not None else None
             accepted_flag = self._resp_get(a, "accepted")
+            if accepted_flag is None and "success" in a:
+                accepted_flag = bool(a.get("success"))
             if accepted_flag is None:
-                accepted_flag = status_value not in ("rejected", "failed", "", None)
+                accepted_flag = status_lower in ("accepted", "filled", "partial")
+            if error_text:
+                accepted_flag = False
+            client_oid = self._resp_get(a, "client_order_id", "clientOrderId")
+            if not client_oid and idx < len(client_order_ids):
+                client_oid = client_order_ids[idx]
             acks.append(
                 OrderAck(
                     order_id=str(self._resp_get(a, "order_id", "orderId", default="")),
-                    accepted=bool(accepted_flag) and not error_msg,
+                    accepted=bool(accepted_flag) and not error_text,
                     filled_size=float(self._resp_get(a, "filled_size", "filledSize", default=0.0) or 0.0),
                     remaining_size=float(self._resp_get(a, "remaining_size", "remainingSize", default=0.0) or 0.0),
                     status=status_value,
-                    client_order_id=self._resp_get(a, "client_order_id", "clientOrderId"),
-                    error=error_msg,
+                    client_order_id=client_oid if client_oid else None,
+                    error=error_text,
+                )
+            )
+        while len(acks) < len(payload):
+            idx = len(acks)
+            fallback_coid = client_order_ids[idx] if idx < len(client_order_ids) else ""
+            acks.append(
+                OrderAck(
+                    order_id="",
+                    accepted=False,
+                    filled_size=0.0,
+                    remaining_size=0.0,
+                    status="rejected",
+                    client_order_id=fallback_coid or None,
+                    error="missing ack from relayer",
                 )
             )
         return acks
@@ -90,3 +118,13 @@ class PyClobRelayer:
         if hasattr(self._client, "approveOutcome"):
             return getattr(self._client, "approveOutcome")(token_address, amount)
         raise NotImplementedError("approve_outcome not available on underlying client")
+
+    def get_balance_allowance(self, params):  # pragma: no cover - exercised via CLI stubs/tests
+        if hasattr(self._client, "get_balance_allowance"):
+            return getattr(self._client, "get_balance_allowance")(params)
+        raise NotImplementedError("get_balance_allowance not available on underlying client")
+
+    def update_balance_allowance(self, params):  # pragma: no cover
+        if hasattr(self._client, "update_balance_allowance"):
+            return getattr(self._client, "update_balance_allowance")(params)
+        raise NotImplementedError("update_balance_allowance not available on underlying client")

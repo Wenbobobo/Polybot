@@ -46,3 +46,23 @@ class ClobHttpClient:
             return payload
         return {"tokens": []}
 
+    def get_price(self, token_id: str, side: Optional[str] = None) -> Dict[str, Any]:
+        params: Dict[str, Any] = {"token_id": token_id}
+        if side:
+            params["side"] = str(side).upper()
+        r = self.client.get("/price", params=params)
+        r.raise_for_status()
+        data = r.json()
+        return data if isinstance(data, dict) else {"data": data}
+
+    def get_midpoint(self, token_id: str) -> Dict[str, Any]:
+        r = self.client.get("/midpoint", params={"token_id": token_id})
+        r.raise_for_status()
+        data = r.json()
+        return data if isinstance(data, dict) else {"data": data}
+
+    def get_spread(self, token_id: str) -> Dict[str, Any]:
+        r = self.client.get("/spread", params={"token_id": token_id})
+        r.raise_for_status()
+        data = r.json()
+        return data if isinstance(data, dict) else {"data": data}

@@ -176,6 +176,16 @@ class RelayerClient:
             return getattr(inner, "approveOutcome")(token_address, amount)
         raise NotImplementedError("approve_outcome not available on underlying client")
 
+    def get_balance_allowance(self, params):  # pragma: no cover
+        if hasattr(self._client, "get_balance_allowance"):
+            return getattr(self._client, "get_balance_allowance")(params)
+        raise NotImplementedError("get_balance_allowance not available on underlying client")
+
+    def update_balance_allowance(self, params):  # pragma: no cover
+        if hasattr(self._client, "update_balance_allowance"):
+            return getattr(self._client, "update_balance_allowance")(params)
+        raise NotImplementedError("update_balance_allowance not available on underlying client")
+
 
 class RetryRelayer:
     """Wrapper that adds retry/backoff around place/cancel operations.
@@ -207,21 +217,37 @@ class RetryRelayer:
                         _etype, e, _tb = sys.exc_info()
                         code = getattr(e, "code", None)
                         msg = str(e) if e else ""
-                        if code == 429 or (isinstance(msg, str) and "rate limit" in msg.lower()):
+                        lower_msg = msg.lower() if isinstance(msg, str) else ""
+                        markets: List[str] = []
+                        try:
+                            markets = sorted({r.market_id for r in reqs})
+                        except Exception:
+                            markets = []
+                        if code == 429 or ("rate limit" in lower_msg):
                             inc("relayer_rate_limited_total", 1)
                             # labelled per-market
                             try:
-                                mkts = sorted({r.market_id for r in reqs})
-                                for m in mkts:
+                                for m in markets:
                                     inc_labelled("relayer_rate_limited_events", {"market": m}, 1)
                             except Exception:
                                 pass
-                        if isinstance(e, TimeoutError) or (isinstance(msg, str) and "timeout" in msg.lower()):
+                        if isinstance(e, TimeoutError) or ("timeout" in lower_msg):
                             inc("relayer_timeouts_total", 1)
                             try:
-                                mkts = sorted({r.market_id for r in reqs})
-                                for m in mkts:
+                                for m in markets:
                                     inc_labelled("relayer_timeouts_events", {"market": m}, 1)
+                            except Exception:
+                                pass
+                        builder_flag = False
+                        if isinstance(code, str) and "builder" in code.lower():
+                            builder_flag = True
+                        elif "builder" in lower_msg:
+                            builder_flag = True
+                        if builder_flag:
+                            inc("relayer_builder_errors_total", 1)
+                            try:
+                                for m in markets:
+                                    inc_labelled("relayer_builder_errors", {"market": m}, 1)
                             except Exception:
                                 pass
                     except Exception:
