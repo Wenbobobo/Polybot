@@ -49,7 +49,7 @@ def _write_base_config(tmp_path: Path) -> Path:
 
 def test_builder_health_ok(monkeypatch, tmp_path: Path):
     cfg = _write_base_config(tmp_path)
-    monkeypatch.setattr(cmds, "build_relayer", lambda *a, **k: _StubRelayer(), raising=True)
+    monkeypatch.setattr(cmds, "_build_real_relayer_cli", lambda *a, **k: _StubRelayer(), raising=True)
     out = cmds.cmd_builder_health(str(cfg))
     assert out.startswith("builder ok")
 

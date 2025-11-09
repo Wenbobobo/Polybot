@@ -30,5 +30,4 @@ def test_smoke_live_appends_metrics(monkeypatch, tmp_path: Path):
     )
     monkeypatch.setattr(cmds, "build_relayer", lambda kind, **kw: StubRelayer())
     out = cmds.cmd_smoke_live(str(cfg), "m1", "o", "buy", 0.4, 1.0, base_url="u", private_key="0x" + "1" * 64)
-    assert "metrics: rate_limited=" in out and " timeouts=" in out
-
+    assert "metrics: rate_limited=" in out and "builder_errors=" in out
