@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple, Any
+from types import SimpleNamespace
 
 from polybot.storage.db import connect_sqlite, enable_wal, connect
 from polybot.storage import schema as schema_mod
@@ -119,6 +120,22 @@ def _ensure_builder_ready(cfg, builder_kwargs: Dict[str, str]) -> tuple[bool, st
     if _builder_source(builder_kwargs):
         return True, None
     return False, "relayer.type=real requires builder credentials (api_key/api_secret/api_passphrase or remote url/token)"
+
+
+def _collect_builder_kwargs(cfg) -> Dict[str, str]:
+    builder_kwargs = _builder_kwargs_from_cfg(cfg)
+    env_builder = _builder_kwargs_from_env()
+    builder_kwargs.update(env_builder)
+    return builder_kwargs
+
+
+def _safe_json_dump(value: Any) -> str:
+    try:
+        import json as _json
+
+        return _json.dumps(value, separators=(",", ":"), sort_keys=True)
+    except Exception:
+        return str(value)
 
 
 def _resolve_markets_raw(
@@ -862,9 +879,7 @@ def cmd_preflight(config_path: str, as_json: bool = False) -> str:
             issues.append("relayer.private_key is invalid (expect 0x-prefixed 32-byte hex)")
         if int(cfg.relayer_chain_id) <= 0:
             issues.append("relayer.chain_id must be > 0")
-        builder_kwargs = _builder_kwargs_from_cfg(cfg)
-        env_builder = _builder_kwargs_from_env()
-        builder_kwargs.update(env_builder)
+        builder_kwargs = _collect_builder_kwargs(cfg)
         ready, reason = _ensure_builder_ready(cfg, builder_kwargs)
         if not ready and reason:
             issues.append(reason)
@@ -909,12 +924,31 @@ def cmd_conversions_split(market_id: str, yes_id: str, no_id: str, usdc_amount: 
     return out
 
 
-def cmd_smoke_live(config_path: str, market_id: str, outcome_id: str, side: str, price: float, size: float, base_url: str, private_key: str, chain_id: int = 137, timeout_s: float = 10.0, as_json: bool = False) -> str:
+def cmd_smoke_live(config_path: str, market_id: str, outcome_id: str, side: str, price: float, size: float, base_url: str, private_key: str, chain_id: Optional[int] = None, timeout_s: Optional[float] = None, as_json: bool = False) -> str:
     pre = cmd_preflight(config_path)
     if not pre.startswith("OK:"):
         return pre
-    res = cmd_relayer_dry_run(market_id, outcome_id, side, price, size, base_url=base_url, private_key=private_key, db_url=":memory:", chain_id=chain_id, timeout_s=timeout_s)
-    # append brief relayer rate-limit/timeout metrics for quick diagnostics
+    cfg = load_service_config(config_path)
+    final_base_url = base_url or cfg.relayer_base_url
+    final_private_key = private_key or cfg.relayer_private_key
+    final_chain_id = chain_id if chain_id is not None else cfg.relayer_chain_id
+    final_timeout_s = timeout_s if timeout_s is not None else cfg.relayer_timeout_s
+    builder_summary = None
+    allowances_summary = None
+    builder_kwargs: Dict[str, str] = {}
+    if cfg.relayer_type.lower() == "real":
+        ok, details, error, builder_kwargs = _builder_health_status(cfg)
+        if not ok:
+            msg = f"builder health failed: {error}"
+            print(msg)
+            return msg
+        builder_summary = details or {}
+        allow_err, allow_data = _collect_allowances_for_smoke(final_base_url, final_private_key, final_chain_id, final_timeout_s, builder_kwargs, outcome_id)
+        if allow_err:
+            allowances_summary = {"error": allow_err}
+        else:
+            allowances_summary = allow_data
+    res = cmd_relayer_dry_run(market_id, outcome_id, side, price, size, base_url=final_base_url, private_key=final_private_key, db_url=":memory:", chain_id=final_chain_id, timeout_s=final_timeout_s)
     from polybot.observability.metrics import get_counter
 
     rl = get_counter("relayer_rate_limited_total")
@@ -922,11 +956,27 @@ def cmd_smoke_live(config_path: str, market_id: str, outcome_id: str, side: str,
     be = get_counter("relayer_builder_errors_total")
     if as_json:
         import json as _json
-        body = {"preflight": pre, "result": res, "rate_limited_total": rl, "timeouts_total": to, "builder_errors_total": be}
+
+        body = {
+            "preflight": pre,
+            "builder": builder_summary,
+            "allowances": allowances_summary,
+            "result": res,
+            "rate_limited_total": rl,
+            "timeouts_total": to,
+            "builder_errors_total": be,
+        }
         out = _json.dumps(body)
         print(out)
         return out
-    out = f"{pre}\n{res}\nmetrics: rate_limited={rl} timeouts={to} builder_errors={be}"
+    lines = [pre]
+    if builder_summary:
+        lines.append(f"builder: {_safe_json_dump(builder_summary)}")
+    if allowances_summary:
+        lines.append(f"allowances: {_safe_json_dump(allowances_summary)}")
+    lines.append(res)
+    lines.append(f"metrics: rate_limited={rl} timeouts={to} builder_errors={be}")
+    out = "\n".join(lines)
     print(out)
     return out
 
@@ -1270,78 +1320,141 @@ def cmd_relayer_dry_run(market_id: str, outcome_id: str, side: str, price: float
     return out
 
 
-def _try_build_real_relayer(base_url: str, private_key: str, chain_id: int = 137, timeout_s: float = 10.0):
+def _try_build_real_relayer(base_url: str, private_key: str, chain_id: int = 137, timeout_s: float = 10.0, builder_kwargs: Optional[Dict[str, str]] = None):
+    kwargs = builder_kwargs or _builder_kwargs_from_env()
     try:
-        builder_kwargs = _builder_kwargs_from_env()
-        return build_relayer("real", base_url=base_url, private_key=private_key, dry_run=False, chain_id=chain_id, timeout_s=timeout_s, **builder_kwargs)
+        return build_relayer("real", base_url=base_url, private_key=private_key, dry_run=False, chain_id=chain_id, timeout_s=timeout_s, **kwargs)
     except Exception as e:  # noqa: BLE001
         return f"relayer unavailable: {e}"
 
 
-def cmd_relayer_approve_usdc(base_url: str, private_key: str, amount: float, retries: int = 2, backoff_ms: int = 100, chain_id: int = 137, timeout_s: float = 10.0) -> str:
-    """Approve USDC spend for relayer (stub).
+def cmd_relayer_approve_usdc(
+    base_url: str,
+    private_key: str,
+    amount: float,  # retained for backwards compatibility; not used
+    retries: int = 2,
+    backoff_ms: int = 100,
+    chain_id: Optional[int] = None,
+    timeout_s: Optional[float] = None,
+    config_path: Optional[str] = None,
+    get_only: bool = False,
+) -> str:
+    """Refresh builder-side USDC allowance via py-clob-client balance endpoints."""
+    cfg, base_url, private_key, chain_id, timeout_s, builder_kwargs = _resolve_relayer_inputs(config_path, base_url, private_key, chain_id, timeout_s)
+    if not private_key:
+        msg = "relayer.private_key is required for allowance operations"
+        print(msg)
+        return msg
+    try:
+        from polybot.adapters.polymarket.crypto import is_valid_private_key
 
-    Until a real client is wired with allowance helpers, this prints a friendly message
-    when the relayer is unavailable or lacks the method.
-    """
-    from polybot.observability.metrics import inc_labelled
-    rel = _try_build_real_relayer(base_url, private_key, chain_id=chain_id, timeout_s=timeout_s)
+        if not is_valid_private_key(private_key):
+            msg = "invalid private_key: expecting 0x-prefixed 32-byte hex"
+            print(msg)
+            return msg
+    except Exception:
+        pass
+    cfg_stub = cfg or SimpleNamespace(relayer_type="real")
+    ready, reason = _ensure_builder_ready(cfg_stub, builder_kwargs)
+    if not ready:
+        msg = reason or "builder credentials missing"
+        print(msg)
+        return msg
+    rel = _build_real_relayer_cli(base_url, private_key, chain_id, timeout_s, builder_kwargs, dry_run=False)
     if isinstance(rel, str):
         print(rel)
         return rel
-    attempt = 0
-    while True:
-        try:
-            inc_labelled("relayer_allowance_attempts", {"kind": "usdc"}, 1)
-            if hasattr(rel, "approve_usdc"):
-                tx = rel.approve_usdc(amount)  # type: ignore[attr-defined]
-                msg = f"approve_usdc submitted: {tx}"
-                inc_labelled("relayer_allowance_success", {"kind": "usdc"}, 1)
-            else:
-                msg = "not implemented: relayer client missing approve_usdc()"
+    try:
+        from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+    except Exception as exc:  # noqa: BLE001
+        msg = f"allowance unavailable: {exc}"
+        print(msg)
+        return msg
+    params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+    try:
+        before, after, update_resp = _run_allowance_flow(rel, params, "usdc", retries, backoff_ms, get_only)
+    except NotImplementedError as exc:
+        msg = str(exc)
+        print(msg)
+        return msg
+    except Exception as exc:  # noqa: BLE001
+        msg = f"relayer unavailable: {exc}"
+        print(msg)
+        return msg
+    out = f"allowance_usdc ok before={_safe_json_dump(before)} after={_safe_json_dump(after)}"
+    if update_resp is not None:
+        out += f" update={_safe_json_dump(update_resp)}"
+    elif get_only:
+        out += " (get-only)"
+    print(out)
+    return out
+
+
+def cmd_relayer_approve_outcome(
+    base_url: str,
+    private_key: str,
+    token_address: str,
+    amount: float,  # retained for backwards compatibility; not used
+    retries: int = 2,
+    backoff_ms: int = 100,
+    chain_id: Optional[int] = None,
+    timeout_s: Optional[float] = None,
+    config_path: Optional[str] = None,
+    get_only: bool = False,
+) -> str:
+    """Refresh outcome token allowance via py-clob-client balance endpoints."""
+    if not token_address:
+        msg = "token parameter is required"
+        print(msg)
+        return msg
+    cfg, base_url, private_key, chain_id, timeout_s, builder_kwargs = _resolve_relayer_inputs(config_path, base_url, private_key, chain_id, timeout_s)
+    if not private_key:
+        msg = "relayer.private_key is required for allowance operations"
+        print(msg)
+        return msg
+    try:
+        from polybot.adapters.polymarket.crypto import is_valid_private_key
+
+        if not is_valid_private_key(private_key):
+            msg = "invalid private_key: expecting 0x-prefixed 32-byte hex"
             print(msg)
             return msg
-        except Exception as e:  # noqa: BLE001
-            attempt += 1
-            inc_labelled("relayer_allowance_errors", {"kind": "usdc"}, 1)
-            if attempt > retries:
-                msg = f"relayer unavailable: {e}"
-                print(msg)
-                return msg
-            import time as _t
-            _t.sleep(backoff_ms / 1000.0)
-
-
-def cmd_relayer_approve_outcome(base_url: str, private_key: str, token_address: str, amount: float, retries: int = 2, backoff_ms: int = 100, chain_id: int = 137, timeout_s: float = 10.0) -> str:
-    """Approve outcome token spend for relayer (stub)."""
-    from polybot.observability.metrics import inc_labelled
-    rel = _try_build_real_relayer(base_url, private_key, chain_id=chain_id, timeout_s=timeout_s)
+    except Exception:
+        pass
+    cfg_stub = cfg or SimpleNamespace(relayer_type="real")
+    ready, reason = _ensure_builder_ready(cfg_stub, builder_kwargs)
+    if not ready:
+        msg = reason or "builder credentials missing"
+        print(msg)
+        return msg
+    rel = _build_real_relayer_cli(base_url, private_key, chain_id, timeout_s, builder_kwargs, dry_run=False)
     if isinstance(rel, str):
         print(rel)
         return rel
-    attempt = 0
-    while True:
-        try:
-            inc_labelled("relayer_allowance_attempts", {"kind": "outcome"}, 1)
-            if hasattr(rel, "approve_outcome"):
-                tx = rel.approve_outcome(token_address, amount)  # type: ignore[attr-defined]
-                msg = f"approve_outcome submitted: {tx}"
-                inc_labelled("relayer_allowance_success", {"kind": "outcome"}, 1)
-            else:
-                msg = "not implemented: relayer client missing approve_outcome()"
-            print(msg)
-            return msg
-        except Exception as e:  # noqa: BLE001
-            attempt += 1
-            inc_labelled("relayer_allowance_errors", {"kind": "outcome"}, 1)
-            if attempt > retries:
-                msg = f"relayer unavailable: {e}"
-                print(msg)
-                return msg
-            import time as _t
-            _t.sleep(backoff_ms / 1000.0)
-
-
+    try:
+        from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+    except Exception as exc:  # noqa: BLE001
+        msg = f"allowance unavailable: {exc}"
+        print(msg)
+        return msg
+    params = BalanceAllowanceParams(asset_type=AssetType.CONDITIONAL, token_id=token_address)
+    try:
+        before, after, update_resp = _run_allowance_flow(rel, params, "outcome", retries, backoff_ms, get_only)
+    except NotImplementedError as exc:
+        msg = str(exc)
+        print(msg)
+        return msg
+    except Exception as exc:  # noqa: BLE001
+        msg = f"relayer unavailable: {exc}"
+        print(msg)
+        return msg
+    out = f"allowance_outcome ok token={token_address} before={_safe_json_dump(before)} after={_safe_json_dump(after)}"
+    if update_resp is not None:
+        out += f" update={_safe_json_dump(update_resp)}"
+    elif get_only:
+        out += " (get-only)"
+    print(out)
+    return out
 def cmd_relayer_live_order(
     market_id: str,
     outcome_id: str,
@@ -1357,6 +1470,7 @@ def cmd_relayer_live_order(
     as_json: bool = False,
     url: str | None = None,
     prefer: str | None = None,
+    suppress_output: bool = False,
     **builder_kwargs,
 ) -> str:
     """Place a single LIVE order via real relayer.
@@ -1433,11 +1547,13 @@ def cmd_relayer_live_order(
             "statuses": status_counts,
         }
         out = _json.dumps(body)
-        print(out)
+        if not suppress_output:
+            print(out)
         return out
     else:
         out = " ".join(parts)
-        print(out)
+        if not suppress_output:
+            print(out)
         return out
 
 
@@ -1467,15 +1583,14 @@ def cmd_relayer_live_order_from_config(
     as_json: bool = False,
     url: str | None = None,
     prefer: str | None = None,
+    suppress_output: bool = False,
 ) -> str:
     """Convenience wrapper to place a live order using credentials from service config + secrets overlay.
 
     Reads relayer settings from TOML (including secrets overlay), then delegates to cmd_relayer_live_order.
     """
     cfg = load_service_config(config_path)
-    builder_kwargs = _builder_kwargs_from_cfg(cfg)
-    env_kwargs = _builder_kwargs_from_env()
-    builder_kwargs.update(env_kwargs)
+    builder_kwargs = _collect_builder_kwargs(cfg)
     return cmd_relayer_live_order(
         market_id=market_id,
         outcome_id=outcome_id,
@@ -1490,6 +1605,7 @@ def cmd_relayer_live_order_from_config(
         as_json=as_json,
         url=url,
         prefer=prefer,
+        suppress_output=suppress_output,
         **builder_kwargs,
     )
 
@@ -1518,41 +1634,35 @@ def _builder_health_output(ok: bool, message: str, details: dict[str, object] | 
     return text
 
 
-def cmd_builder_health(config_path: str, as_json: bool = False) -> str:
-    """Check builder credentials and instantiation for a config."""
-    cfg = load_service_config(config_path)
-    builder_kwargs = _builder_kwargs_from_cfg(cfg)
-    env_kwargs = _builder_kwargs_from_env()
-    builder_kwargs.update(env_kwargs)
+def _builder_health_status(cfg) -> Tuple[bool, Optional[dict[str, object]], Optional[str], Dict[str, str]]:
+    builder_kwargs = _collect_builder_kwargs(cfg)
     ready, reason = _ensure_builder_ready(cfg, builder_kwargs)
     source = _builder_source(builder_kwargs)
     if not ready:
-        return _builder_health_output(False, reason or "builder credentials missing", {"source": source}, as_json)
+        return False, None, reason, builder_kwargs
     if not cfg.relayer_private_key:
-        return _builder_health_output(False, "relayer.private_key is missing", {"source": source}, as_json)
+        return False, None, "relayer.private_key is missing", builder_kwargs
     try:
         from polybot.adapters.polymarket.crypto import is_valid_private_key
 
         if not is_valid_private_key(cfg.relayer_private_key):
-            return _builder_health_output(False, "relayer.private_key is invalid", {"source": source}, as_json)
+            return False, None, "relayer.private_key is invalid", builder_kwargs
     except Exception:
         pass
-    try:
-        rel = build_relayer(
-            "real",
-            base_url=cfg.relayer_base_url,
-            private_key=cfg.relayer_private_key,
-            dry_run=True,
-            chain_id=cfg.relayer_chain_id,
-            timeout_s=cfg.relayer_timeout_s,
-            **builder_kwargs,
-        )
-    except Exception as exc:  # noqa: BLE001
-        return _builder_health_output(False, f"failed to build relayer: {exc}", {"source": source}, as_json)
+    rel = _build_real_relayer_cli(
+        base_url=cfg.relayer_base_url,
+        private_key=cfg.relayer_private_key,
+        chain_id=cfg.relayer_chain_id,
+        timeout_s=cfg.relayer_timeout_s,
+        builder_kwargs=builder_kwargs,
+        dry_run=True,
+    )
+    if isinstance(rel, str):
+        return False, None, rel, builder_kwargs
     client = getattr(rel, "_client", rel)
     builder_config = getattr(client, "builder_config", None)
     if builder_config is None:
-        return _builder_health_output(False, "client missing builder_config (check credentials and py-clob-client version)", {"source": source}, as_json)
+        return False, None, "client missing builder_config (check credentials and py-clob-client version)", builder_kwargs
     builder_type_value = None
     try:
         btype = builder_config.get_builder_type()
@@ -1562,9 +1672,9 @@ def cmd_builder_health(config_path: str, as_json: bool = False) -> str:
     try:
         can_auth = bool(client.can_builder_auth())
     except Exception as exc:  # noqa: BLE001
-        return _builder_health_output(False, f"builder auth check failed: {exc}", {"source": source, "builder_type": builder_type_value}, as_json)
+        return False, None, f"builder auth check failed: {exc}", builder_kwargs
     if not can_auth:
-        return _builder_health_output(False, "builder configuration invalid or incomplete", {"source": source, "builder_type": builder_type_value, "can_builder_auth": can_auth}, as_json)
+        return False, None, "builder configuration invalid or incomplete", builder_kwargs
     address = ""
     if hasattr(client, "get_address"):
         try:
@@ -1577,7 +1687,318 @@ def cmd_builder_health(config_path: str, as_json: bool = False) -> str:
         "address": address,
         "can_builder_auth": can_auth,
     }
-    return _builder_health_output(True, "builder credentials valid", details, as_json)
+    return True, details, None, builder_kwargs
+
+
+def _build_real_relayer_cli(
+    base_url: str,
+    private_key: str,
+    chain_id: int,
+    timeout_s: float,
+    builder_kwargs: Dict[str, str],
+    *,
+    dry_run: bool,
+):
+    try:
+        return build_relayer(
+            "real",
+            base_url=base_url,
+            private_key=private_key,
+            dry_run=dry_run,
+            chain_id=chain_id,
+            timeout_s=timeout_s,
+            **builder_kwargs,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return f"relayer unavailable: {exc}"
+
+
+def _resolve_relayer_inputs(
+    config_path: Optional[str],
+    base_url: Optional[str],
+    private_key: Optional[str],
+    chain_id: Optional[int],
+    timeout_s: Optional[float],
+) -> Tuple[Optional["ServiceConfig"], str, str, int, float, Dict[str, str]]:
+    cfg = None
+    builder_kwargs: Dict[str, str] = _builder_kwargs_from_env()
+    if config_path:
+        cfg = load_service_config(config_path)
+        base_url = base_url or cfg.relayer_base_url
+        private_key = private_key or cfg.relayer_private_key
+        if chain_id is None:
+            chain_id = cfg.relayer_chain_id
+        if timeout_s is None:
+            timeout_s = cfg.relayer_timeout_s
+        builder_kwargs = _collect_builder_kwargs(cfg)
+    chain_id = chain_id if chain_id is not None else 137
+    timeout_s = timeout_s if timeout_s is not None else 10.0
+    final_base_url = base_url or "https://clob.polymarket.com"
+    final_private_key = private_key or ""
+    return cfg, final_base_url, final_private_key, chain_id, timeout_s, builder_kwargs
+
+
+def _build_clob_client(base_url: str, timeout_s: float) -> ClobHttpClient:
+    return ClobHttpClient(base_url=base_url, timeout=timeout_s)
+
+
+def _fetch_market_overview(base_url: str, market_id: str, outcome_id: str, timeout_s: float, outcome_hint: Optional[str] = None) -> Dict[str, Any]:
+    client = _build_clob_client(base_url, timeout_s)
+    market_payload: Dict[str, Any] = {"market_id": market_id, "outcome_id": outcome_id, "title": "", "status": "", "outcome_name": outcome_hint or ""}
+    errors: Dict[str, str] = {}
+    try:
+        details = client.get_market(market_id) or {}
+        market_payload["title"] = str(details.get("question") or details.get("title") or market_payload["title"])
+        market_payload["status"] = str(details.get("status") or "")
+        if not market_payload["outcome_name"]:
+            tokens = details.get("tokens") or []
+            if isinstance(tokens, list):
+                for t in tokens:
+                    if not isinstance(t, dict):
+                        continue
+                    tok = str(t.get("token_id") or t.get("tokenId") or t.get("id") or "")
+                    if tok == outcome_id:
+                        market_payload["outcome_name"] = str(t.get("name") or t.get("symbol") or t.get("displayName") or "")
+                        break
+    except Exception as exc:  # noqa: BLE001
+        errors["market"] = str(exc)
+    def _safe_call(label: str, func, *args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            errors[label] = str(exc)
+            return None
+
+    prices = {
+        "buy": _safe_call("price_buy", client.get_price, outcome_id, "buy"),
+        "sell": _safe_call("price_sell", client.get_price, outcome_id, "sell"),
+        "midpoint": _safe_call("midpoint", client.get_midpoint, outcome_id),
+        "spread": _safe_call("spread", client.get_spread, outcome_id),
+    }
+    payload = {"market": market_payload, "prices": prices}
+    if errors:
+        payload["errors"] = errors
+    return payload
+
+
+def _run_allowance_flow(rel, params, kind: str, retries: int, backoff_ms: int, get_only: bool):
+    from polybot.observability.metrics import inc_labelled
+
+    if not hasattr(rel, "get_balance_allowance"):
+        raise NotImplementedError("get_balance_allowance not available on relayer")
+    get_balance = getattr(rel, "get_balance_allowance")
+    before = get_balance(params)
+    if get_only:
+        return before, before, None
+    update_fn = getattr(rel, "update_balance_allowance", None)
+    if update_fn is None:
+        raise NotImplementedError("update_balance_allowance not available on relayer")
+    attempt = 0
+    while True:
+        try:
+            inc_labelled("relayer_allowance_attempts", {"kind": kind}, 1)
+            update_resp = update_fn(params)
+            inc_labelled("relayer_allowance_success", {"kind": kind}, 1)
+            after = get_balance(params)
+            return before, after, update_resp
+        except Exception as exc:  # noqa: BLE001
+            attempt += 1
+            inc_labelled("relayer_allowance_errors", {"kind": kind}, 1)
+            if attempt > retries:
+                raise
+            import time as _t
+
+            _t.sleep(max(0, backoff_ms) / 1000.0)
+
+def _collect_allowances_for_smoke(base_url: str, private_key: str, chain_id: int, timeout_s: float, builder_kwargs: Dict[str, str], outcome_id: str | None):
+    rel = _build_real_relayer_cli(base_url, private_key, chain_id, timeout_s, builder_kwargs, dry_run=False)
+    if isinstance(rel, str):
+        return rel, None
+    try:
+        from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+    except Exception as exc:  # noqa: BLE001
+        return f"allowances unavailable: {exc}", None
+    summary: Dict[str, object] = {}
+    try:
+        usdc = getattr(rel, "get_balance_allowance")(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
+        summary["usdc"] = usdc
+    except Exception as exc:  # noqa: BLE001
+        summary["usdc_error"] = str(exc)
+    if outcome_id:
+        try:
+            outcome = getattr(rel, "get_balance_allowance")(BalanceAllowanceParams(asset_type=AssetType.CONDITIONAL, token_id=outcome_id))
+            summary["outcome"] = outcome
+        except Exception as exc:  # noqa: BLE001
+            summary["outcome_error"] = str(exc)
+    return None, summary
+
+
+def cmd_builder_health(config_path: str, as_json: bool = False) -> str:
+    """Check builder credentials and instantiation for a config."""
+    cfg = load_service_config(config_path)
+    ok, details, error, builder_kwargs = _builder_health_status(cfg)
+    if not ok:
+        return _builder_health_output(False, error or "builder not ready", {"source": _builder_source(builder_kwargs)}, as_json)
+    return _builder_health_output(True, "builder credentials valid", details or {}, as_json)
+
+
+def _format_price_value(value: Any) -> str:
+    if isinstance(value, dict):
+        if "price" in value:
+            return str(value.get("price"))
+        if "midpoint" in value:
+            return str(value.get("midpoint"))
+        if "spread" in value:
+            return str(value.get("spread"))
+    if value is None:
+        return "n/a"
+    return str(value)
+
+
+def _emit_market_trade_output(payload: Dict[str, Any], as_json: bool) -> str:
+    if as_json:
+        out = _json.dumps(payload)
+        print(out)
+        return out
+    lines = []
+    market = payload.get("market") or {}
+    outcome_line = market.get("outcome_name") or market.get("outcome_id") or ""
+    lines.append(f"market: {market.get('title') or ''} ({market.get('market_id')}) outcome={outcome_line}")
+    prices = payload.get("prices") or {}
+    lines.append(
+        "prices: buy={buy} sell={sell} midpoint={mid} spread={spread}".format(
+            buy=_format_price_value(prices.get("buy")),
+            sell=_format_price_value(prices.get("sell")),
+            mid=_format_price_value(prices.get("midpoint")),
+            spread=_format_price_value(prices.get("spread")),
+        )
+    )
+    if payload.get("errors"):
+        lines.append(f"errors: {_safe_json_dump(payload['errors'])}")
+    if payload.get("note"):
+        lines.append(payload["note"])
+    if payload.get("entry"):
+        entry = payload["entry"]
+        lines.append(f"entry: {entry if isinstance(entry, str) else _safe_json_dump(entry)}")
+    if payload.get("close"):
+        close = payload["close"]
+        lines.append(f"close: {close if isinstance(close, str) else _safe_json_dump(close)}")
+    out = "\n".join(lines)
+    print(out)
+    return out
+
+
+def cmd_market_trade(
+    config_path: str,
+    *,
+    url: Optional[str] = None,
+    query: Optional[str] = None,
+    market_id: Optional[str] = None,
+    outcome_id: Optional[str] = None,
+    prefer: Optional[str] = None,
+    side: str = "buy",
+    price: float,
+    size: float,
+    close: bool = False,
+    close_price: Optional[float] = None,
+    close_size: Optional[float] = None,
+    confirm_live: bool = False,
+    as_json: bool = False,
+    base_url: Optional[str] = None,
+    chain_id: Optional[int] = None,
+    timeout_s: Optional[float] = None,
+) -> str:
+    cfg = load_service_config(config_path)
+    trade_side = (side or "buy").strip().lower()
+    if trade_side not in ("buy", "sell"):
+        msg = "side must be 'buy' or 'sell'"
+        print(msg)
+        return msg
+    resolved: Dict[str, Any]
+    if market_id and outcome_id:
+        resolved = {
+            "market_id": market_id,
+            "selected_outcome_id": outcome_id,
+            "selected_outcome_name": "",
+            "title": "",
+        }
+    else:
+        if not url and not query:
+            msg = "provide --url/--query or --market-id/--outcome-id"
+            print(msg)
+            return msg
+        resolved = _resolve_market_choice(
+            url=url,
+            query=query,
+            prefer=prefer,
+            base_url=base_url or cfg.relayer_base_url,
+            chain_id=chain_id or cfg.relayer_chain_id,
+            timeout_s=timeout_s or cfg.relayer_timeout_s,
+        ) or {}
+        if not resolved:
+            msg = "failed to resolve market from input"
+            print(msg)
+            return msg
+    market_id = str(resolved.get("market_id") or market_id or "")
+    outcome_id = str(resolved.get("selected_outcome_id") or outcome_id or "")
+    if not market_id or not outcome_id:
+        msg = "missing market_id/outcome_id after resolution"
+        print(msg)
+        return msg
+    base_url_final = base_url or cfg.relayer_base_url
+    chain_id_final = chain_id or cfg.relayer_chain_id
+    timeout_final = timeout_s or cfg.relayer_timeout_s
+    overview = _fetch_market_overview(base_url_final, market_id, outcome_id, timeout_final, resolved.get("selected_outcome_name"))
+    payload: Dict[str, Any] = {
+        "market": overview.get("market"),
+        "prices": overview.get("prices"),
+    }
+    if overview.get("errors"):
+        payload["errors"] = overview["errors"]
+    if not confirm_live:
+        payload["note"] = "Add --confirm-live to place entry/exit orders; displaying market snapshot only."
+        return _emit_market_trade_output(payload, as_json)
+    entry_resp = cmd_relayer_live_order_from_config(
+        config_path,
+        market_id,
+        outcome_id,
+        trade_side,
+        price,
+        size,
+        confirm_live=True,
+        as_json=as_json,
+        suppress_output=True,
+    )
+    if as_json:
+        try:
+            payload["entry"] = _json.loads(entry_resp)
+        except Exception:
+            payload["entry"] = {"raw": entry_resp}
+    else:
+        payload["entry"] = entry_resp
+    if close and confirm_live:
+        exit_side = "sell" if trade_side == "buy" else "buy"
+        exit_price = close_price if close_price is not None else price
+        exit_size = close_size if close_size is not None else size
+        close_resp = cmd_relayer_live_order_from_config(
+            config_path,
+            market_id,
+            outcome_id,
+            exit_side,
+            exit_price,
+            exit_size,
+            confirm_live=True,
+            as_json=as_json,
+            suppress_output=True,
+        )
+        if as_json:
+            try:
+                payload["close"] = _json.loads(close_resp)
+            except Exception:
+                payload["close"] = {"raw": close_resp}
+        else:
+            payload["close"] = close_resp
+    return _emit_market_trade_output(payload, as_json)
 
 
 def cmd_markets_search(db_url: str, query: str, limit: int = 10, as_json: bool = False) -> str:

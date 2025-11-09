@@ -201,16 +201,24 @@ def main() -> None:
     p_rdry.add_argument("--chain-id", type=int, default=137)
     p_rdry.add_argument("--timeout-s", type=float, default=10.0)
 
-    p_ausdc = sub.add_parser("relayer-approve-usdc", help="Approve USDC spend (stub if real client unavailable)")
+    p_ausdc = sub.add_parser("relayer-approve-usdc", help="Refresh builder USDC allowance via balance-allowance endpoint")
     p_ausdc.add_argument("--base-url", default="https://clob.polymarket.com")
     p_ausdc.add_argument("--private-key", default="")
-    p_ausdc.add_argument("--amount", type=float, required=True)
+    p_ausdc.add_argument("--amount", type=float, required=True, help="Retained for backwards compatibility (ignored)")
+    p_ausdc.add_argument("--chain-id", type=int, default=None)
+    p_ausdc.add_argument("--timeout-s", type=float, default=None)
+    p_ausdc.add_argument("--config")
+    p_ausdc.add_argument("--get-only", action="store_true", help="Only fetch allowance without submitting update")
 
-    p_aout = sub.add_parser("relayer-approve-outcome", help="Approve outcome token spend (stub if real client unavailable)")
+    p_aout = sub.add_parser("relayer-approve-outcome", help="Refresh builder outcome token allowance via balance-allowance endpoint")
     p_aout.add_argument("--base-url", default="https://clob.polymarket.com")
     p_aout.add_argument("--private-key", default="")
     p_aout.add_argument("--token", required=True)
-    p_aout.add_argument("--amount", type=float, required=True)
+    p_aout.add_argument("--amount", type=float, required=True, help="Retained for backwards compatibility (ignored)")
+    p_aout.add_argument("--chain-id", type=int, default=None)
+    p_aout.add_argument("--timeout-s", type=float, default=None)
+    p_aout.add_argument("--config")
+    p_aout.add_argument("--get-only", action="store_true", help="Only fetch allowance without submitting update")
 
     p_rlive = sub.add_parser("relayer-live-order", help="Place a single LIVE order (requires --confirm-live)")
     p_rlive.add_argument("market_id")
@@ -225,6 +233,25 @@ def main() -> None:
     p_rlive.add_argument("--confirm-live", action="store_true")
     p_rlive.add_argument("--url")
     p_rlive.add_argument("--prefer", choices=["yes", "no"])
+
+    p_trade = sub.add_parser("market-trade", help="Resolve a market by name/URL, show latest info, optionally place and close a live order")
+    p_trade.add_argument("--config", required=True)
+    p_trade.add_argument("--url")
+    p_trade.add_argument("--query")
+    p_trade.add_argument("--market-id")
+    p_trade.add_argument("--outcome-id")
+    p_trade.add_argument("--prefer", choices=["yes", "no"])
+    p_trade.add_argument("--side", choices=["buy", "sell"], default="buy")
+    p_trade.add_argument("--price", type=float, required=True)
+    p_trade.add_argument("--size", type=float, required=True)
+    p_trade.add_argument("--close", action="store_true")
+    p_trade.add_argument("--close-price", type=float)
+    p_trade.add_argument("--close-size", type=float)
+    p_trade.add_argument("--confirm-live", action="store_true")
+    p_trade.add_argument("--json", action="store_true")
+    p_trade.add_argument("--base-url")
+    p_trade.add_argument("--chain-id", type=int)
+    p_trade.add_argument("--timeout-s", type=float)
 
     p_merge = sub.add_parser("conversions-merge", help="Simulate CTF merge (YES/NO -> USDC) using fake or real CTF")
     p_merge.add_argument("market_id")
@@ -245,10 +272,10 @@ def main() -> None:
     p_smoke.add_argument("side", choices=["buy", "sell"])
     p_smoke.add_argument("price", type=float)
     p_smoke.add_argument("size", type=float)
-    p_smoke.add_argument("--base-url", default="https://clob.polymarket.com")
+    p_smoke.add_argument("--base-url", default="")
     p_smoke.add_argument("--private-key", default="")
-    p_smoke.add_argument("--chain-id", type=int, default=137)
-    p_smoke.add_argument("--timeout-s", type=float, default=10.0)
+    p_smoke.add_argument("--chain-id", type=int, default=None)
+    p_smoke.add_argument("--timeout-s", type=float, default=None)
     p_smoke.add_argument("--json", action="store_true")
 
     p_rlc = sub.add_parser("relayer-live-order-config", help="Place a single LIVE order using relayer settings from config (secrets overlay)")
@@ -455,9 +482,26 @@ def main() -> None:
             )
         )
     elif args.cmd == "relayer-approve-usdc":
-        cmd_relayer_approve_usdc(base_url=args.base_url, private_key=args.private_key, amount=args.amount)
+        cmd_relayer_approve_usdc(
+            base_url=args.base_url,
+            private_key=args.private_key,
+            amount=args.amount,
+            chain_id=args.chain_id,
+            timeout_s=args.timeout_s,
+            config_path=args.config,
+            get_only=args.get_only,
+        )
     elif args.cmd == "relayer-approve-outcome":
-        cmd_relayer_approve_outcome(base_url=args.base_url, private_key=args.private_key, token_address=args.token, amount=args.amount)
+        cmd_relayer_approve_outcome(
+            base_url=args.base_url,
+            private_key=args.private_key,
+            token_address=args.token,
+            amount=args.amount,
+            chain_id=args.chain_id,
+            timeout_s=args.timeout_s,
+            config_path=args.config,
+            get_only=args.get_only,
+        )
     elif args.cmd == "relayer-live-order":
         cmd_relayer_live_order(
             args.market_id,
@@ -472,6 +516,27 @@ def main() -> None:
             confirm_live=args.confirm_live,
             url=args.url,
             prefer=args.prefer,
+        )
+    elif args.cmd == "market-trade":
+        from .commands import cmd_market_trade
+        cmd_market_trade(
+            args.config,
+            url=args.url,
+            query=args.query,
+            market_id=args.market_id,
+            outcome_id=args.outcome_id,
+            prefer=args.prefer,
+            side=args.side,
+            price=args.price,
+            size=args.size,
+            close=args.close,
+            close_price=args.close_price,
+            close_size=args.close_size,
+            confirm_live=args.confirm_live,
+            as_json=args.json,
+            base_url=args.base_url,
+            chain_id=args.chain_id,
+            timeout_s=args.timeout_s,
         )
     elif args.cmd == "relayer-dry-run":
         cmd_relayer_dry_run(
