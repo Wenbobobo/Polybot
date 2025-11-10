@@ -47,7 +47,14 @@ Relayer / Wallet & Secrets
   - 完成 USDC 与 outcome token 授权（allowance）：`relayer-approve-usdc` 与 `relayer-approve-outcome` 现在直接调用官方 `/balance-allowance` API，可带 `--config` 复用 Builder/私钥；`--get-only` 仅查看额度。命令会在输出中显示 `before/after/update`，并累积 `relayer_allowance_*` metrics。
   - 规则/市场风险过筛（避免 Other；核对 rule_hash）；
   - 合理的限速/重试参数，避免自我限流或风控触发。
-  - 安装 `py-clob-client`：使用 uv 安装（`uv add py-clob-client`），或 `uv pip install py-clob-client`；保持 `dry_run=true` 进行首次联调。
+- 安装 `py-clob-client`：使用 uv 安装（`uv add py-clob-client`），或 `uv pip install py-clob-client`；保持 `dry_run=true` 进行首次联调。
+
+### Builder funding & readiness checklist
+1. **Identify the funded wallet:** `builder-health --config <cfg> --json` prints the builder source and `address` (matches the `POLYMARKET_PROXY_ADDRESS` mentioned in the official quickstart docs at https://docs.polymarket.com/quickstart/orders/first-order). This is the wallet that must hold Polygon USDC.e for both the website UI and API.
+2. **Fund the builder wallet:** Transfer Polygon USDC.e (USDC bridged to Polygon) from your exchange or self-custody wallet to the address from step 1. You can bridge via Polymarket’s UI or any PoS bridge; confirm on-chain explorers (Polygonscan) before proceeding. Document each deposit in your ops log.
+3. **Refresh allowances:** After the deposit confirms, run `uv run python -m polybot.cli relayer-approve-usdc --config <cfg> --amount <max_notional>` and `relayer-approve-outcome --token-id <id> --amount <max_shares>` once in normal mode (no `--get-only`). Use `--get-only` first to capture the `before` snapshot; expect non-zero balances before moving on.
+4. **Smoke the live path:** Execute `uv run python -m polybot.cli smoke-live --config <cfg> <market_id> <outcome_id> buy <price> <size> --json` to collect `{preflight,builder,allowances,...}`; keep the JSON output next to the service logs for auditing.
+5. **Exercise the trading loop:** When steps 1–4 succeed, run `market-trade --config <cfg> --url "<market url or slug>" --side buy --price <p> --size <s> --close --confirm-live --json`. Repeat for the sell-first flow. Record order IDs, fill ratios, and builder metrics into `docs/progress.md` so future operators understand real-world quirks (Cloudflare challenges, partial fills, etc.).
 
 Configuration Model (Consolidated)
 - Use a single service config TOML (e.g., `config/service.example.toml`) containing `[service]`, `[service.spread]`, `[relayer]`, and `[[market]]` sections.

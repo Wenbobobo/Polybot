@@ -63,3 +63,5 @@ error.txt
 config/secrets.local.toml
 *.db*
 recordings/
+poly_data/
+poly_maker/

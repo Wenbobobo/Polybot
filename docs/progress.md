@@ -2,6 +2,13 @@
 
 This file tracks decisions and incremental progress.
 
+2025-11-10
+- Verified builder credentials via `builder-health --config config/service.toml --json` (address `0x7e7CEe...57e4` authenticates successfully) and captured the command output for future automation.
+- Investigated allowance state with `relayer-approve-usdc --get-only` and confirmed both balance and allowance are `0`, blocking live orders despite the UI wallet having funds; identified missing documentation on funding the builder wallet (Polygon USDC transfer to the builder address) and planned to add those runbook notes plus a readiness checklist.
+- Defined the mandatory pre-live flow (builder-health → relayer-approve-{usdc,outcome} → smoke-live dry-run → `market-trade --confirm-live`) and queued updates to docs/handoff/runbook/roadmap so other operators follow the same sequence.
+- Kicked off the Telegram bot consumer PRD effort (low priority) and scheduled a dedicated `docs/tgbot-prd.md` so future contributors can align on UX before implementation.
+- Exercised `smoke-live` and `market-trade` (with/without `--confirm-live`) against active market `0xf4d03c...06d12`, observed `prices` API working while live order attempts were rejected due to zero builder allowance, and noted intermittent `py_clob_client` TLS resets on `/tick-size` that we’ll mitigate with retries or by pre-seeding tick sizes from Gamma data.
+
 2025-11-09
 - Added `builder-health` CLI: loads service config + secrets, instantiates real relayer (dry-run) and surfaces builder type/source/address/can_builder_auth with JSON support for automation; failure paths now exit with actionable errors.
 - Preflight hardened for real relayer configs: invalid/missing builder credentials now fail fast alongside the existing private_key/chain_id checks; unit tests cover the new validation plus builder-health happy/edge cases.

@@ -32,11 +32,13 @@
 ## S6 Observability & Hardening
 - Metrics, dashboards, performance tuning
 - Regression suite from recordings; documentation polish
+- Surface builder allowance / funding metrics inside `status-top`, Grafana, and smoke scripts so live readiness is continuously visible.
 
 ## S7 Telegram Bot (post S2)
 - Alerts, status, optional approvals
 - Config and permissions model；托管下单（类似 gmgnbot）
 - 初版：离线命令解析与引擎联动（不依赖网络），后续接入 Telegram SDK 与权限校验
+- Draft full PRD/interaction spec (`docs/tgbot-prd.md`) covering market lookup → risk gates → confirm/close UX before writing code.
 
 ## Queued Next (post S1–S4)
 - Real relayer (py‑clob‑client) live wiring: signer, timeouts/backoff, allowance calls, richer acks.

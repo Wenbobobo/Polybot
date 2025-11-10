@@ -14,6 +14,7 @@ Architecture Overview
 - storage: event-sourced schema (orderbook events, trades, our orders/fills), snapshots, indices/partitions.
 - observability: structured logs, metrics, recordings (record/replay).
   - metrics: per-market counters and timers; status surfaces applied/invalid/resync/quotes and engine timings.
+  - builder readiness dashboards: report builder-health results, USDC/conditional allowances, and smoke-live snapshots so operators can detect funding drift before orders fail.
 
 Data Ingestion
 - WS-first for real-time L2; REST for snapshots and resync.
@@ -59,3 +60,4 @@ Dutch Book (S3) Design Notes
 Telegram 托管下单（预研）
 - 初版：`tgbot` 模块提供命令解析与引擎联动（/status、/buy、/sell、/arb），离线可测；
 - 正式版：接入官方 SDK 与 webhook，权限/白名单、最小下单额、确认流程（dry-run→确认→实盘），日志与审计。
+- 产出《docs/tgbot-prd.md》描述角色、聊天脚本、错误处理与风控约束，作为实现前的唯一真源。
